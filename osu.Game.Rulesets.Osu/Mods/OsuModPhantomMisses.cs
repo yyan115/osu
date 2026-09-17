@@ -61,7 +61,8 @@ namespace osu.Game.Rulesets.Osu.Mods
             MaxValue = 500,
         };
 
-        [SettingSource("Mask target hitsounds", "Silence phantom targets so a successful hit does not reveal itself through its hitsound.")]
+        // Kept as a bindable for compatibility with existing local tests/settings. Its value is
+        // intentionally ignored: a target hitsound would reveal that a displayed miss was phantom.
         public BindableBool MaskTargetHitsounds { get; } = new BindableBool(true);
 
         // Kept as a bindable for compatibility with existing local tests/settings. Its value is
@@ -169,9 +170,7 @@ namespace osu.Game.Rulesets.Osu.Mods
             {
                 HitCircle target = circles[index];
                 phantomTargets.Add(target);
-
-                if (MaskTargetHitsounds.Value)
-                    target.Samples.Clear();
+                target.Samples.Clear();
             }
         }
 
