@@ -184,9 +184,8 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         private void onNewResult(DrawableHitObject judgedObject, JudgementResult realResult)
         {
-            if (!judgedObject.DisplayResult || !realResult.HasResult)
-                return;
-
+            // ComboEffects reacts to every combo reset, including results which are not visually
+            // displayed. Track these before the display check so our first-break state stays in sync.
             bool comboActuallyReset = realResult.ComboAtJudgement > 0 && realResult.ComboAfterJudgement == 0;
             bool nativeComboBreakPlayed = comboActuallyReset
                                           && (realResult.ComboAtJudgement > 20
@@ -194,6 +193,9 @@ namespace osu.Game.Rulesets.Osu.Mods
 
             if (comboActuallyReset)
                 actualComboBreaks.Add(realResult);
+
+            if (!judgedObject.DisplayResult || !realResult.HasResult)
+                return;
 
             JudgementResult visualResult = realResult;
             bool showPhantomMiss = realResult.IsHit
