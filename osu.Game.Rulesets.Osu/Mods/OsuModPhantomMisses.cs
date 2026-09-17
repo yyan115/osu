@@ -142,6 +142,10 @@ namespace osu.Game.Rulesets.Osu.Mods
             overlay.ShowHealthBar.Disabled = false;
             overlay.ShowHealthBar.Value = false;
             overlay.ShowHealthBar.Disabled = true;
+
+            // This layer is intentionally not controlled by ShowHud. Hide it explicitly so
+            // custom skins cannot expose score/combo/accuracy state during phantom play.
+            overlay.PlayfieldSkinLayer.Hide();
         }
 
         public void ApplyToPlayer(Player player)
