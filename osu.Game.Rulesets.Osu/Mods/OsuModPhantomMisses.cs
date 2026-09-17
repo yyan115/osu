@@ -74,7 +74,8 @@ namespace osu.Game.Rulesets.Osu.Mods
         // intentionally ignored: live score, combo and health state would reveal genuine misses.
         public BindableBool HideLiveScoreHud { get; } = new BindableBool(true);
 
-        [SettingSource("Prevent failure", "Keep the play running so a real miss cannot reveal itself by ending the map early.")]
+        // Kept as a bindable for compatibility with existing local tests/settings. Its value is
+        // intentionally ignored: failing early would reveal genuine misses before the results screen.
         public BindableBool PreventFailure { get; } = new BindableBool(true);
 
         private readonly HashSet<HitCircle> phantomTargets = new HashSet<HitCircle>();
@@ -146,7 +147,7 @@ namespace osu.Game.Rulesets.Osu.Mods
             (player as ReplayPlayer)?.ReplayOverlay.Hide();
         }
 
-        public bool PerformFail() => !PreventFailure.Value;
+        public bool PerformFail() => false;
 
         public bool RestartOnFail => false;
 
