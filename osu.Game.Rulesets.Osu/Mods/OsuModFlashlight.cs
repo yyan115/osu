@@ -19,7 +19,7 @@ namespace osu.Game.Rulesets.Osu.Mods
 {
     public partial class OsuModFlashlight : ModFlashlight<OsuHitObject>, IApplicableToDrawableHitObject
     {
-        public override Type[] IncompatibleMods => base.IncompatibleMods.Concat(new[] { typeof(OsuModBloom), typeof(OsuModBlinds) }).ToArray();
+        public override Type[] IncompatibleMods => base.IncompatibleMods.Concat(new[] { typeof(OsuModBloom), typeof(OsuModBlinds), typeof(IObscuresRealTimeGameplayState) }).ToArray();
 
         private const double default_follow_delay = 120;
 
