@@ -1,6 +1,8 @@
 # osu!lazer with Phantom Misses
 
-An unofficial personal practice fork of [osu!lazer](https://github.com/ppy/osu). Selected successful circles can look and sound like misses while the real judgements are preserved for the results screen. Live combo, score, accuracy and health are hidden during play.
+Inspired from: https://www.reddit.com/r/osugame/comments/1wigvnt/crazy_new_idea_for_an_osu_mod/
+
+An unofficial fork of [osu!lazer](https://github.com/ppy/osu). Selected successful circles can look and sound like misses while the real judgements are preserved for the results screen. Live combo, score, accuracy and health are hidden during play for now (WIP).
 
 ## Download and play
 
