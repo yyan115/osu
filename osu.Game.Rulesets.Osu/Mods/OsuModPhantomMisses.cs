@@ -28,7 +28,7 @@ namespace osu.Game.Rulesets.Osu.Mods
     /// Training mod which occasionally displays a synthetic miss for a hit circle that was
     /// actually hit. The authoritative judgement and score are never modified.
     /// </summary>
-    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed
+    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed, IReadFromConfig
     {
         public override string Name => "Phantom Misses";
 
@@ -64,7 +64,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         [SettingSource("Mask target hitsounds", "Silence phantom targets so a successful hit does not reveal itself through its hitsound.")]
         public BindableBool MaskTargetHitsounds { get; } = new BindableBool(true);
 
-        [SettingSource("Play combo-break sound", "Play the normal combo-break sample when a phantom miss is displayed.")]
+        [SettingSource("Play combo-break sound", "Give every displayed miss the same combo-break feedback so the sound cannot reveal whether it was real.")]
         public BindableBool PlayComboBreakSound { get; } = new BindableBool(true);
 
         [SettingSource("Hide live score HUD", "Hide score, accuracy, combo, health and other live HUD information that could reveal whether a miss was real.")]
@@ -74,11 +74,18 @@ namespace osu.Game.Rulesets.Osu.Mods
         public BindableBool PreventFailure { get; } = new BindableBool(true);
 
         private readonly HashSet<HitCircle> phantomTargets = new HashSet<HitCircle>();
+        private readonly HashSet<JudgementResult> actualComboBreaks = new HashSet<JudgementResult>();
+        private readonly Bindable<bool> alwaysPlayFirstComboBreak = new Bindable<bool>();
 
         private JudgementContainer<DrawableOsuJudgement> judgementLayer = null!;
         private Container judgementAboveHitObjectLayer = null!;
         private JudgementPooler<DrawableOsuJudgement> judgementPooler = null!;
         private SkinnableSound comboBreakSample = null!;
+
+        public void ReadFromConfig(OsuConfigManager config)
+        {
+            config.BindWith(OsuSetting.AlwaysPlayFirstComboBreak, alwaysPlayFirstComboBreak);
+        }
 
         public void ApplyToDrawableRuleset(DrawableRuleset<OsuHitObject> drawableRuleset)
         {
@@ -115,6 +122,7 @@ namespace osu.Game.Rulesets.Osu.Mods
             drawableRuleset.Overlays.Add(comboBreakSample = new SkinnableSound(new SampleInfo("Gameplay/combobreak")));
 
             drawableRuleset.Playfield.NewResult += onNewResult;
+            drawableRuleset.Playfield.RevertResult += onRevertResult;
         }
 
         public void ApplyToHUD(HUDOverlay overlay)
@@ -131,8 +139,11 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         public void ApplyToPlayer(Player player)
         {
-            if (HideLiveScoreHud.Value)
-                player.BreakOverlay.Hide();
+            if (!HideLiveScoreHud.Value)
+                return;
+
+            player.BreakOverlay.Hide();
+            (player as ReplayPlayer)?.ReplayOverlay.Hide();
         }
 
         public bool PerformFail() => !PreventFailure.Value;
@@ -142,6 +153,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         private void selectPhantomTargets(DrawableRuleset<OsuHitObject> drawableRuleset)
         {
             phantomTargets.Clear();
+            actualComboBreaks.Clear();
 
             HitCircle[] circles = drawableRuleset.Beatmap.HitObjects.OfType<HitCircle>().ToArray();
             if (circles.Length == 0)
@@ -175,6 +187,14 @@ namespace osu.Game.Rulesets.Osu.Mods
             if (!judgedObject.DisplayResult || !realResult.HasResult)
                 return;
 
+            bool comboActuallyReset = realResult.ComboAtJudgement > 0 && realResult.ComboAfterJudgement == 0;
+            bool nativeComboBreakPlayed = comboActuallyReset
+                                          && (realResult.ComboAtJudgement > 20
+                                              || (alwaysPlayFirstComboBreak.Value && actualComboBreaks.Count == 0));
+
+            if (comboActuallyReset)
+                actualComboBreaks.Add(realResult);
+
             JudgementResult visualResult = realResult;
             bool showPhantomMiss = realResult.IsHit
                                    && realResult.HitObject is HitCircle hitCircle
@@ -199,9 +219,15 @@ namespace osu.Game.Rulesets.Osu.Mods
                 // hit-vs-miss object animation difference without changing its judgement.
                 if (judgedObject is DrawableHitCircle drawableHitCircle)
                     drawableHitCircle.FadeOut(100);
+            }
 
-                if (PlayComboBreakSound.Value)
-                    comboBreakSample.Play();
+            // Native ComboEffects only plays at >20 combo, or for the first combo break when
+            // configured to do so. Fill in the other real misses ourselves so every displayed
+            // Miss has the same audio cue as a phantom, without double-playing the native sound.
+            if (PlayComboBreakSound.Value
+                && (showPhantomMiss || (realResult.Type == HitResult.Miss && !nativeComboBreakPlayed)))
+            {
+                comboBreakSample.Play();
             }
 
             DrawableOsuJudgement? judgement = judgementPooler.Get(
@@ -216,6 +242,11 @@ namespace osu.Game.Rulesets.Osu.Mods
             judgementAboveHitObjectLayer.ChangeChildDepth(
                 judgement.ProxiedAboveHitObjectsContent,
                 (float)-visualResult.TimeAbsolute);
+        }
+
+        private void onRevertResult(JudgementResult result)
+        {
+            actualComboBreaks.Remove(result);
         }
 
         private void onJudgementLoaded(DrawableOsuJudgement judgement)
