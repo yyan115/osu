@@ -60,6 +60,14 @@ jobs:
           caches-home: inspectcode
           verbosity: WARN
 
+      - name: Upload static analysis results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: inspectcode-results
+          path: results.sarif.json
+          if-no-files-found: warn
+
   test:
     name: Test
     runs-on: ${{matrix.os.fullname}}
