@@ -2,7 +2,7 @@ name: Phantom Misses Desktop
 
 on:
   push:
-    branches: [master, phantom-misses]
+    branches: [master, phantom-misses, fix/phantom-miss-fidelity]
   workflow_dispatch:
 
 permissions:
@@ -34,6 +34,19 @@ jobs:
       DOTNET_NOLOGO: '1'
     steps:
       - uses: actions/checkout@v6
+
+      - name: Archive exact source for fidelity review
+        if: matrix.rid == 'linux-x64' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
+        run: git archive --format=tar --output=fidelity-source.tar HEAD
+
+      - name: Upload fidelity review source
+        if: matrix.rid == 'linux-x64' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
+        uses: actions/upload-artifact@v7
+        with:
+          name: phantom-fidelity-source
+          path: fidelity-source.tar
+          retention-days: 7
+          if-no-files-found: error
 
       - uses: actions/setup-dotnet@v5
         with:
