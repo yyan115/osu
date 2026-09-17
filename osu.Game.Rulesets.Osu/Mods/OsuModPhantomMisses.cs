@@ -218,11 +218,17 @@ namespace osu.Game.Rulesets.Osu.Mods
                     Type = HitResult.Miss,
                 };
 
-                // A real miss fades a hit circle out over 100ms. Apply the same top-level
-                // fade to a successfully hit phantom target to mask the most obvious
-                // hit-vs-miss object animation difference without changing its judgement.
                 if (judgedObject is DrawableHitCircle drawableHitCircle)
+                {
+                    // Circle skins may add their own successful-hit flash/scale transforms to the
+                    // skinned circle content. Remove transforms beginning at the judgement time so
+                    // those hit-only animations cannot reveal a phantom, while keeping pre-hit
+                    // approach/fade transforms intact.
+                    drawableHitCircle.CirclePiece.Drawable.ClearTransformsAfter(realResult.TimeAbsolute, true);
+
+                    // A real circle miss uses a 100ms top-level fade.
                     drawableHitCircle.FadeOut(100);
+                }
             }
 
             // Native ComboEffects only plays at >20 combo, or for the first combo break when
