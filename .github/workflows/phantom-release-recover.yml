@@ -1,0 +1,60 @@
+name: Recover Phantom Release
+
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/phantom-release-recover.yml]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Completed Phantom Misses Desktop run with both platform builds successful
+        type: string
+        required: true
+        default: '35242736294'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: phantom-release-publish
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.repository == 'yyan115/osu' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN: ${{ inputs.build_run_id || '35242736294' }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify the original native builds passed
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" > run.json
+          jq -e '.status == "completed" and .head_branch == "master" and .repository.full_name == "yyan115/osu" and .path == ".github/workflows/phantom-misses.yml"' run.json > /dev/null
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN/jobs?per_page=100" > jobs.json
+          jq -e '[.jobs[] | select(.name == "Build and test (win-x64)" or .name == "Build and test (linux-x64)" )] | length == 2 and all(.[]; .conclusion == "success")' jobs.json > /dev/null
+          sha=$(jq -r .head_sha run.json)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.BUILD_RUN }}
+          pattern: phantom-package-*
+          path: dist
+          merge-multiple: true
+      - name: Resume verified uploads and publish
+        shell: bash
+        env:
+          PHANTOM_SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          PHANTOM_SOURCE_RUN: ${{ env.BUILD_RUN }}
+        run: bash scripts/publish-phantom-release.sh

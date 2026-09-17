@@ -92,7 +92,10 @@ jobs:
     needs: build-test-package
     if: github.repository == 'yyan115/osu' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
+    concurrency:
+      group: phantom-release-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -109,27 +112,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          version="$(tr -d '\r\n' < PHANTOM_VERSION)"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid PHANTOM_VERSION'; exit 1; }
-          tag="phantom-v$version"
-          test -s dist/phantom-misses-linux-x64.tar.gz
-          test -s dist/phantom-misses-win-x64.zip
-          (cd dist && sha256sum -c ./*.sha256)
-          if gh release view "$tag" --json isDraft --jq .isDraft > existing-release.txt 2>/dev/null; then
-            if [[ "$(cat existing-release.txt)" == false ]]; then
-              echo "Release $tag already exists and is left unchanged. Bump PHANTOM_VERSION for a new release." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            echo "An unpublished draft $tag already exists. Resolve it before publishing; no assets were overwritten."
-            exit 1
-          fi
-          cp PHANTOM_RELEASE_NOTES.md release-notes.md
-          printf '\n## Build provenance\n\nSource commit: `%s`\n\n[Build and test run](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
-          gh release create "$tag" dist/* \
-            --target "$GITHUB_SHA" \
-            --title "Phantom Misses $version" \
-            --notes-file release-notes.md \
-            --latest
-          gh release view "$tag" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+        run: bash scripts/publish-phantom-release.sh
