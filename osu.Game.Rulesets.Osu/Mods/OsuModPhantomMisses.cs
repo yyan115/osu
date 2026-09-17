@@ -28,7 +28,7 @@ namespace osu.Game.Rulesets.Osu.Mods
     /// Training mod which occasionally displays a synthetic miss for a hit circle that was
     /// actually hit. The authoritative judgement and score are never modified.
     /// </summary>
-    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed, IReadFromConfig
+    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed, IReadFromConfig, IObscuresRealTimeGameplayState
     {
         public override string Name => "Phantom Misses";
 
@@ -42,7 +42,15 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         public override bool ValidForMultiplayer => false;
 
-        public override Type[] IncompatibleMods => new[] { typeof(OsuModBubbles) };
+        public override Type[] IncompatibleMods => new[]
+        {
+            typeof(OsuModBubbles),
+            typeof(OsuModFlashlight),
+            typeof(OsuModNoScope),
+            typeof(OsuModBloom),
+            typeof(OsuModMuted),
+            typeof(ModAdaptiveSpeed),
+        };
 
         [SettingSource("Seed", "Use a custom seed instead of a random one", SettingControlType = typeof(SettingsNumberBox))]
         public Bindable<int?> Seed { get; } = new Bindable<int?>();
