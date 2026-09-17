@@ -63,10 +63,18 @@ jobs:
           -p:PublishSingleFile=false -p:PublishTrimmed=false
           -o artifacts/phantom-misses-linux-x64
 
-      - name: Package client
+      - name: Package portable client with verification reports
         run: |
-          cp LICENCE artifacts/phantom-misses-linux-x64/
-          printf '%s\n' "${GITHUB_SHA}" > artifacts/phantom-misses-linux-x64/COMMIT.txt
+          package=artifacts/phantom-misses-linux-x64
+          test -x "$package/osu!"
+          bash -n scripts/run-phantom-misses.sh
+          install -m 755 scripts/run-phantom-misses.sh "$package/run-phantom-misses.sh"
+          cp LICENCE "$package/"
+          cp PHANTOM_MISSES.md "$package/README-PHANTOM-MISSES.md"
+          printf 'WindowMode = Windowed\n' > "$package/framework.ini"
+          printf '%s\n' "${GITHUB_SHA}" > "$package/COMMIT.txt"
+          mkdir -p "$package/verification"
+          cp TestResults/*.trx "$package/verification/"
           tar -C artifacts -czf phantom-misses-linux-x64.tar.gz phantom-misses-linux-x64
           sha256sum phantom-misses-linux-x64.tar.gz > phantom-misses-linux-x64.tar.gz.sha256
 
