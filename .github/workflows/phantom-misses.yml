@@ -1,0 +1,71 @@
+name: Phantom Misses Linux
+
+on:
+  push:
+    branches: [phantom-misses]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phantom-misses-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    if: github.repository == 'yyan115/osu'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build desktop and tests
+        run: dotnet build osu.Desktop.slnf -c Debug -warnaserror
+
+      - name: Run Phantom Misses regression tests
+        run: >-
+          dotnet test osu.Game.Rulesets.Osu.Tests/osu.Game.Rulesets.Osu.Tests.csproj
+          -c Debug --no-build
+          --filter FullyQualifiedName~TestSceneOsuModPhantomMisses
+          --logger 'trx;LogFileName=phantom-misses.trx'
+          --results-directory TestResults
+          -- NUnit.ConsoleOut=0
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phantom-misses-test-results
+          path: TestResults
+          if-no-files-found: warn
+
+      - name: Publish self-contained Linux client
+        run: >-
+          dotnet publish osu.Desktop/osu.Desktop.csproj
+          -c Release -r linux-x64 --self-contained true
+          -p:PublishSingleFile=false -p:PublishTrimmed=false
+          -o artifacts/phantom-misses-linux-x64
+
+      - name: Package client
+        run: |
+          cp LICENCE artifacts/phantom-misses-linux-x64/
+          printf '%s\n' "${GITHUB_SHA}" > artifacts/phantom-misses-linux-x64/COMMIT.txt
+          tar -C artifacts -czf phantom-misses-linux-x64.tar.gz phantom-misses-linux-x64
+          sha256sum phantom-misses-linux-x64.tar.gz > phantom-misses-linux-x64.tar.gz.sha256
+
+      - name: Upload client
+        uses: actions/upload-artifact@v7
+        with:
+          name: phantom-misses-linux-x64
+          path: |
+            phantom-misses-linux-x64.tar.gz
+            phantom-misses-linux-x64.tar.gz.sha256
+          if-no-files-found: error
