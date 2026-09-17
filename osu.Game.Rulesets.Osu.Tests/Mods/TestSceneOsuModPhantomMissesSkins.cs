@@ -8,12 +8,14 @@ using NUnit.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Transforms;
 using osu.Framework.Testing;
 using osu.Framework.Timing;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.ControlPoints;
 using osu.Game.Configuration;
-using osu.Game.Rulesets.Judgements;
+using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Objects.Drawables;
 using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Osu.Mods;
@@ -22,6 +24,7 @@ using osu.Game.Rulesets.Osu.Objects.Drawables;
 using osu.Game.Rulesets.Osu.UI;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.UI;
+using osu.Game.Skinning;
 using osuTK;
 
 namespace osu.Game.Rulesets.Osu.Tests.Mods
@@ -149,7 +152,32 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
                 p.Phantom.State.Value == ArmedState.Hit && p.Phantom.Result.IsHit && p.Phantom.SamplePlays == 1));
         }
 
-        private void createPairs(float difficulty, double rate, bool animations, bool lighting, osu.Game.Rulesets.Mods.IApplicableToDrawableHitObject? visualMod = null)
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TestLiveSkinReloadDoesNotRevealSuccessfulHit(bool afterMiss)
+        {
+            createPairs(5, 1, true, true);
+            seek(start_time);
+            AddStep("hit phantom circles", () => pairs.ForEach(p => p.Phantom.TriggerHit()));
+            if (afterMiss)
+            {
+                AddStep("cross timeout", () => pairs.ForEach(p => p.Seek(p.Deadline + 50)));
+                AddUntilStep("miss displayed", () => pairs.All(p => p.PhantomDisplays == 1));
+            }
+            AddStep("reload skin components", () => pairs.ForEach(p => p.ReloadSkin()));
+            AddWaitStep("recreate skinned drawables", 5);
+            AddAssert("skin never receives successful hit", () => pairs.All(p =>
+                !p.PhantomStates.Contains(ArmedState.Hit) && p.PhantomDisplays == (afterMiss ? 1 : 0)));
+            assertIdentical("same appearance after real skin reload");
+            if (!afterMiss)
+            {
+                AddStep("cross timeout", () => pairs.ForEach(p => p.Seek(p.Deadline + 50)));
+                AddUntilStep("miss displayed", () => pairs.All(p => p.PhantomDisplays == 1));
+                assertIdentical("reloaded skins use native miss animation");
+            }
+        }
+
+        private void createPairs(float difficulty, double rate, bool animations, bool lighting, IApplicableToDrawableHitObject? visualMod = null)
         {
             AddStep("create six skin comparisons", () =>
             {
@@ -159,8 +187,17 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
                 SetContents(_ =>
                 {
                     var pair = new CirclePair(difficulty, rate);
-                    visualMod?.ApplyToDrawableHitObject(pair.Native);
-                    visualMod?.ApplyToDrawableHitObject(pair.Phantom);
+                    foreach (var circle in new[] { pair.Native, pair.Phantom })
+                    {
+                        // Visibility mods retain per-beatmap state. Give each side its own
+                        // clone, including a preceding object so Hidden's normal fade is tested.
+                        var mod = (visualMod as Mod)?.DeepClone();
+                        (mod as IApplicableToBeatmap)?.ApplyToBeatmap(new Beatmap
+                        {
+                            HitObjects = new List<HitObject> { createCircle(0, difficulty), circle.HitObject },
+                        });
+                        (mod as IApplicableToDrawableHitObject)?.ApplyToDrawableHitObject(circle);
+                    }
                     pairs.Add(pair);
                     return pair;
                 });
@@ -201,9 +238,41 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
                 Assert.That(right[i].Alpha, Is.EqualTo(left[i].Alpha).Within(0.00001), left[i].GetType().Name);
                 Assert.That(right[i].Scale, Is.EqualTo(left[i].Scale), left[i].GetType().Name);
                 Assert.That(right[i].Size, Is.EqualTo(left[i].Size), left[i].GetType().Name);
-                Assert.That(right[i].Rotation, Is.EqualTo(left[i].Rotation).Within(0.00001));
+                if (left[i] is LegacyJudgementPieceOld)
+                    compareLegacyRotation(left[i], right[i]);
+                else
+                    Assert.That(right[i].Rotation, Is.EqualTo(left[i].Rotation).Within(0.00001));
+                Assert.That(right[i].Position, Is.EqualTo(left[i].Position), left[i].GetType().Name);
                 Assert.That(right[i].Colour, Is.EqualTo(left[i].Colour), left[i].GetType().Name);
             }
+        }
+
+        private static void compareLegacyRotation(Drawable expected, Drawable actual)
+        {
+            // Native legacy MISS chooses a new random angle on each playback. Comparing
+            // those independent angles for equality would also fail for two genuine misses.
+            // Compare their timing and normalised motion instead, retaining the native RNG.
+            var left = expected.Transforms.Where(t => t.TargetMember == nameof(Drawable.Rotation)).Cast<Transform<float>>().ToArray();
+            var right = actual.Transforms.Where(t => t.TargetMember == nameof(Drawable.Rotation)).Cast<Transform<float>>().ToArray();
+            Assert.That(right.Length, Is.EqualTo(left.Length));
+            if (left.Length == 0)
+            {
+                Assert.That(actual.Rotation, Is.EqualTo(expected.Rotation));
+                return;
+            }
+
+            float expectedAngle = left[^1].EndValue;
+            float actualAngle = right[^1].EndValue;
+            Assert.That(expectedAngle, Is.InRange(-17.2f, 17.2f));
+            Assert.That(actualAngle, Is.InRange(-17.2f, 17.2f));
+            for (int i = 0; i < left.Length; i++)
+            {
+                Assert.That(right[i].GetType(), Is.EqualTo(left[i].GetType()));
+                Assert.That(right[i].StartTime, Is.EqualTo(left[i].StartTime));
+                Assert.That(right[i].EndTime, Is.EqualTo(left[i].EndTime));
+                Assert.That(right[i].EndValue * expectedAngle, Is.EqualTo(left[i].EndValue * actualAngle).Within(0.0001));
+            }
+            Assert.That(actual.Rotation * expectedAngle, Is.EqualTo(expected.Rotation * actualAngle).Within(0.0001));
         }
 
         private static HitCircle createCircle(double startTime, float difficulty)
@@ -213,7 +282,7 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
             return circle;
         }
 
-        private partial class CirclePair : Container
+        private partial class CirclePair : SkinProvidingContainer
         {
             public readonly TestCircle Native;
             public readonly TestCircle Phantom;
@@ -229,6 +298,7 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
             public double Deadline => start_time + Native.HitObject.HitWindows!.WindowFor(HitResult.Meh);
 
             public CirclePair(float difficulty, double rate)
+                : base(null)
             {
                 RelativeSizeAxes = Axes.Both;
                 manualClock = new ManualClock { CurrentTime = start_time - 400, Rate = rate };
@@ -259,6 +329,8 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
             }
 
             public void Seek(double time) => manualClock.CurrentTime = time;
+
+            public void ReloadSkin() => TriggerSourceChanged();
         }
 
         private partial class TestCircle : DrawableHitCircle
