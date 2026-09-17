@@ -153,7 +153,7 @@ namespace osu.Game.Rulesets.Osu.Mods
 
             // This layer is intentionally not controlled by ShowHud. Hide it explicitly so
             // custom skins cannot expose score/combo/accuracy state during phantom play.
-            overlay.PlayfieldSkinLayer.Hide();
+            overlay.HidePlayfieldSkinLayer();
         }
 
         public void ApplyToPlayer(Player player)
