@@ -51,6 +51,37 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
             });
         }
 
+        [Test]
+        public void TestDefaultConcealment()
+        {
+            bool sawPhantomMiss = false;
+
+            CreateModTest(new ModTestData
+            {
+                Mod = new OsuModPhantomMisses
+                {
+                    Seed = { Value = 12345 },
+                    AverageSpacing = { Value = 30 },
+                    WarmupCircles = { Value = 0 },
+                },
+                Autoplay = true,
+                CreateBeatmap = createCircleBeatmap,
+                PassCondition = () =>
+                {
+                    sawPhantomMiss |= Player.ChildrenOfType<DrawableOsuJudgement>()
+                                              .Any(j => j.Result?.Type == HitResult.Miss);
+
+                    return sawPhantomMiss
+                           && !Player.HUDOverlay.ShowHud.Value
+                           && Player.HUDOverlay.ShowHud.Disabled
+                           && !Player.HUDOverlay.ShowHealthBar.Value
+                           && Player.HUDOverlay.ShowHealthBar.Disabled
+                           && Player.Results.Count >= object_count
+                           && Player.Results.All(result => result.Type == result.Judgement.MaxResult);
+                }
+            });
+        }
+
         private static Beatmap createCircleBeatmap()
         {
             var hitObjects = new List<HitObject>(object_count);
