@@ -134,9 +134,12 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         public void ApplyToHUD(HUDOverlay overlay)
         {
-            // This is the same public HUD switch used by Cinema.
+            // A previous application (or another mod) may already have locked these bindables.
+            // Unlock before assigning even an identical value, then lock again for this play.
+            overlay.ShowHud.Disabled = false;
             overlay.ShowHud.Value = false;
             overlay.ShowHud.Disabled = true;
+            overlay.ShowHealthBar.Disabled = false;
             overlay.ShowHealthBar.Value = false;
             overlay.ShowHealthBar.Disabled = true;
         }
