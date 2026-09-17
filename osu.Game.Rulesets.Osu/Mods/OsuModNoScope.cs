@@ -20,7 +20,7 @@ namespace osu.Game.Rulesets.Osu.Mods
     {
         public override LocalisableString Description => "Where's the cursor?";
 
-        public override Type[] IncompatibleMods => new[] { typeof(OsuModBloom) };
+        public override Type[] IncompatibleMods => new[] { typeof(OsuModBloom), typeof(IObscuresRealTimeGameplayState) };
 
         private PeriodTracker spinnerPeriods = null!;
 
