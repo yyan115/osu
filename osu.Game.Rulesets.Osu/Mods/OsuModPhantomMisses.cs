@@ -74,13 +74,14 @@ namespace osu.Game.Rulesets.Osu.Mods
         public BindableBool PreventFailure { get; } = new BindableBool(true);
 
         private readonly HashSet<HitCircle> phantomTargets = new HashSet<HitCircle>();
-        private readonly HashSet<JudgementResult> actualComboBreaks = new HashSet<JudgementResult>();
+        private readonly HashSet<JudgementResult> nativeComboBreakTriggers = new HashSet<JudgementResult>();
         private readonly Bindable<bool> alwaysPlayFirstComboBreak = new Bindable<bool>();
 
         private JudgementContainer<DrawableOsuJudgement> judgementLayer = null!;
         private Container judgementAboveHitObjectLayer = null!;
         private JudgementPooler<DrawableOsuJudgement> judgementPooler = null!;
         private SkinnableSound comboBreakSample = null!;
+        private IFrameStableClock gameplayClock = null!;
 
         public void ReadFromConfig(OsuConfigManager config)
         {
@@ -90,6 +91,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         public void ApplyToDrawableRuleset(DrawableRuleset<OsuHitObject> drawableRuleset)
         {
             selectPhantomTargets(drawableRuleset);
+            gameplayClock = drawableRuleset.FrameStableClock;
 
             // The built-in playfield would otherwise display the real hit judgement as well.
             // We replace the judgement presentation only; scoring still receives the original result.
@@ -153,7 +155,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         private void selectPhantomTargets(DrawableRuleset<OsuHitObject> drawableRuleset)
         {
             phantomTargets.Clear();
-            actualComboBreaks.Clear();
+            nativeComboBreakTriggers.Clear();
 
             HitCircle[] circles = drawableRuleset.Beatmap.HitObjects.OfType<HitCircle>().ToArray();
             if (circles.Length == 0)
@@ -185,14 +187,14 @@ namespace osu.Game.Rulesets.Osu.Mods
         private void onNewResult(DrawableHitObject judgedObject, JudgementResult realResult)
         {
             // ComboEffects reacts to every combo reset, including results which are not visually
-            // displayed. Track these before the display check so our first-break state stays in sync.
+            // displayed. Track the exact set of results for which its native sound path triggers.
             bool comboActuallyReset = realResult.ComboAtJudgement > 0 && realResult.ComboAfterJudgement == 0;
-            bool nativeComboBreakPlayed = comboActuallyReset
-                                          && (realResult.ComboAtJudgement > 20
-                                              || (alwaysPlayFirstComboBreak.Value && actualComboBreaks.Count == 0));
+            bool nativeComboBreakTriggered = comboActuallyReset
+                                              && (realResult.ComboAtJudgement > 20
+                                                  || (alwaysPlayFirstComboBreak.Value && nativeComboBreakTriggers.Count == 0));
 
-            if (comboActuallyReset)
-                actualComboBreaks.Add(realResult);
+            if (nativeComboBreakTriggered)
+                nativeComboBreakTriggers.Add(realResult);
 
             if (!judgedObject.DisplayResult || !realResult.HasResult)
                 return;
@@ -226,8 +228,13 @@ namespace osu.Game.Rulesets.Osu.Mods
             // Native ComboEffects only plays at >20 combo, or for the first combo break when
             // configured to do so. Fill in the other real misses ourselves so every displayed
             // Miss has the same audio cue as a phantom, without double-playing the native sound.
+            bool canPlayGameplaySample = !gameplayClock.IsRewinding
+                                         && !gameplayClock.IsCatchingUp.Value
+                                         && !gameplayClock.IsPaused.Value;
+
             if (PlayComboBreakSound.Value
-                && (showPhantomMiss || (realResult.Type == HitResult.Miss && !nativeComboBreakPlayed)))
+                && canPlayGameplaySample
+                && (showPhantomMiss || (realResult.Type == HitResult.Miss && !nativeComboBreakTriggered)))
             {
                 comboBreakSample.Play();
             }
@@ -248,7 +255,7 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         private void onRevertResult(JudgementResult result)
         {
-            actualComboBreaks.Remove(result);
+            nativeComboBreakTriggers.Remove(result);
         }
 
         private void onJudgementLoaded(DrawableOsuJudgement judgement)
