@@ -238,7 +238,8 @@ namespace osu.Game.Rulesets.Osu
                         new OsuModBubbles(),
                         new OsuModSynesthesia(),
                         new OsuModDepth(),
-                        new OsuModBloom()
+                        new OsuModBloom(),
+                        new OsuModPhantomMisses()
                     };
 
                 case ModType.System:
@@ -390,6 +391,7 @@ namespace osu.Game.Rulesets.Osu
             new OsuDifficultySection(),
             new FillFlowContainer
             {
+                RelativeSizeAxes = Axes.X,
                 AutoSizeAxes = Axes.Y,
                 Direction = FillDirection.Vertical,
                 Spacing = new Vector2(SetupScreen.SPACING),
