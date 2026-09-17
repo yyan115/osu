@@ -65,11 +65,27 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
                                               .Any(j => j.Result?.Type == HitResult.Miss);
 
                     return sawPhantomMiss
+                           && !Player.HUDOverlay.ShowHud.Value
+                           && Player.HUDOverlay.ShowHud.Disabled
+                           && !Player.HUDOverlay.ShowHealthBar.Value
+                           && Player.HUDOverlay.ShowHealthBar.Disabled
                            && Player.ScoreProcessor.JudgedHits >= object_count
                            && Player.Results.Count >= object_count
                            && Player.Results.All(result => result.Type == result.Judgement.MaxResult);
                 }
             });
+        }
+
+        [Test]
+        public void TestFailurePreventionCannotBeDisabled()
+        {
+            var mod = new OsuModPhantomMisses
+            {
+                PreventFailure = { Value = false },
+            };
+
+            Assert.That(mod.PerformFail(), Is.False);
+            Assert.That(mod.RestartOnFail, Is.False);
         }
 
         [Test]
