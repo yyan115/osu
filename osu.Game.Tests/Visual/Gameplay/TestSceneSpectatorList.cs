@@ -1,10 +1,13 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System.Linq;
 using System.Threading;
 using NUnit.Framework;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
+using osu.Framework.Testing;
 using osu.Framework.Utils;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics;
@@ -72,6 +75,8 @@ namespace osu.Game.Tests.Visual.Gameplay
                 ]);
             }, 10);
 
+            AddUntilStep("spectators visible during play", () => list.ChildrenOfType<FillFlowContainer>().First().Alpha == 1);
+
             AddRepeatStep("remove random user", () => ((ISpectatorClient)spectatorClient).UserEndedWatching(
                 spectatorClient.WatchingUsers[RNG.Next(spectatorClient.WatchingUsers.Count)].OnlineID), 5);
 
@@ -81,6 +86,44 @@ namespace osu.Game.Tests.Visual.Gameplay
 
             AddStep("enter break", () => playingState.Value = LocalUserPlayingState.Break);
             AddStep("stop playing", () => playingState.Value = LocalUserPlayingState.NotPlaying);
+            AddUntilStep("spectators hidden outside play", () => list.ChildrenOfType<FillFlowContainer>().First().Alpha == 0);
+        }
+
+        [Test]
+        public void TestWithoutGameplayState()
+        {
+            SpectatorList list = null!;
+            var spectatorClient = new TestSpectatorClient();
+            var multiplayerClient = new TestMultiplayerClient(new TestRoomRequestsHandler());
+
+            AddStep("create list without gameplay state", () =>
+            {
+                Children = new Drawable[]
+                {
+                    spectatorClient,
+                    multiplayerClient,
+                    new DependencyProvidingContainer
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        CachedDependencies =
+                        [
+                            (typeof(SpectatorClient), spectatorClient),
+                            (typeof(MultiplayerClient), multiplayerClient),
+                        ],
+                        Child = list = new SpectatorList(),
+                    }
+                };
+            });
+            AddUntilStep("list loads without gameplay", () => list.IsLoaded);
+            AddStep("add spectator outside gameplay", () => ((ISpectatorClient)spectatorClient).UserStartedWatching([
+                new SpectatorUser
+                {
+                    OnlineID = 1,
+                    Username = "Preview spectator",
+                }
+            ]));
+            AddUntilStep("spectator state processed", () => spectatorClient.WatchingUsers.Count == 1);
+            AddAssert("no gameplay-dependent spectator display", () => list.ChildrenOfType<FillFlowContainer>().First().Alpha == 0);
         }
     }
 }

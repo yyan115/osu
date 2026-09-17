@@ -134,10 +134,4 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
             DisplayMiss = null;
         }
     }
-
-    internal sealed class CircleMissPresentation
-    {
-        public bool IsPhantomTarget { get; set; }
-        public double? Time { get; set; }
-    }
 }
