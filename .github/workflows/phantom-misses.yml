@@ -1,22 +1,34 @@
-name: Phantom Misses Linux
+name: Phantom Misses Desktop
 
 on:
   push:
-    branches: [phantom-misses]
+    branches: [master, phantom-misses]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: phantom-misses-linux-${{ github.ref }}
-  cancel-in-progress: true
+  group: phantom-misses-desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   build-test-package:
+    name: Build and test (${{ matrix.rid }})
     if: github.repository == 'yyan115/osu'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
@@ -52,37 +64,72 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phantom-misses-test-results
-          path: TestResults
+          name: phantom-tests-${{ matrix.rid }}
+          path: TestResults/*.trx
           if-no-files-found: warn
 
-      - name: Publish self-contained Linux client
+      - name: Publish self-contained desktop client
         run: >-
           dotnet publish osu.Desktop/osu.Desktop.csproj
-          -c Release -r linux-x64 --self-contained true
+          -c Release -r ${{ matrix.rid }} --self-contained true
           -p:PublishSingleFile=false -p:PublishTrimmed=false
-          -o artifacts/phantom-misses-linux-x64
+          -o artifacts/phantom-misses-${{ matrix.rid }}
 
-      - name: Package portable client with verification reports
-        run: |
-          package=artifacts/phantom-misses-linux-x64
-          test -x "$package/osu!"
-          bash -n scripts/run-phantom-misses.sh
-          install -m 755 scripts/run-phantom-misses.sh "$package/run-phantom-misses.sh"
-          cp LICENCE "$package/"
-          cp PHANTOM_MISSES.md "$package/README-PHANTOM-MISSES.md"
-          printf 'WindowMode = Windowed\n' > "$package/framework.ini"
-          printf '%s\n' "${GITHUB_SHA}" > "$package/COMMIT.txt"
-          mkdir -p "$package/verification"
-          cp TestResults/*.trx "$package/verification/"
-          tar -C artifacts -czf phantom-misses-linux-x64.tar.gz phantom-misses-linux-x64
-          sha256sum phantom-misses-linux-x64.tar.gz > phantom-misses-linux-x64.tar.gz.sha256
+      - name: Verify reports and package portable client
+        shell: pwsh
+        run: ./scripts/package-phantom-misses.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
 
       - name: Upload client
         uses: actions/upload-artifact@v7
         with:
-          name: phantom-misses-linux-x64
-          path: |
-            phantom-misses-linux-x64.tar.gz
-            phantom-misses-linux-x64.tar.gz.sha256
+          name: phantom-package-${{ matrix.rid }}
+          path: dist/*
+          compression-level: 0
           if-no-files-found: error
+
+  release:
+    name: Publish Windows and Linux release
+    needs: build-test-package
+    if: github.repository == 'yyan115/osu' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: phantom-package-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish versioned release after both platforms pass
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < PHANTOM_VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid PHANTOM_VERSION'; exit 1; }
+          tag="phantom-v$version"
+          test -s dist/phantom-misses-linux-x64.tar.gz
+          test -s dist/phantom-misses-win-x64.zip
+          (cd dist && sha256sum -c ./*.sha256)
+          if gh release view "$tag" --json isDraft --jq .isDraft > existing-release.txt 2>/dev/null; then
+            if [[ "$(cat existing-release.txt)" == false ]]; then
+              echo "Release $tag already exists and is left unchanged. Bump PHANTOM_VERSION for a new release." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "An unpublished draft $tag already exists. Resolve it before publishing; no assets were overwritten."
+            exit 1
+          fi
+          cp PHANTOM_RELEASE_NOTES.md release-notes.md
+          printf '\n## Build provenance\n\nSource commit: `%s`\n\n[Build and test run](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+          gh release create "$tag" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Phantom Misses $version" \
+            --notes-file release-notes.md \
+            --latest
+          gh release view "$tag" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

@@ -2,19 +2,33 @@
 
 A personal osu!lazer fork for practising without authoritative live full-combo feedback. This is a complete client, not a DLL to install in the official client.
 
-## Run the Linux package
+## Download
 
-Requires a current x86-64 Linux desktop with working graphics/audio drivers. The package includes the .NET runtime; no SDK or compilation is required.
+[Get the latest Windows and Linux release](https://github.com/yyan115/osu/releases/latest).
 
-Close any other osu! client first because the clients share an IPC name. Extract the entire `phantom-misses-linux-x64.tar.gz` archive into a writable folder, open a terminal there, and run:
+Choose `phantom-misses-win-x64.zip` for Windows or `phantom-misses-linux-x64.tar.gz` for Linux. Both include the .NET runtime; no SDK or compilation is required. GitHub's separate **Source code** archives are for development and are not the playable packages.
+
+## Run on Windows
+
+Requires 64-bit Windows with working graphics/audio drivers. Extract the entire Windows ZIP into a writable folder, close other osu! clients, then double-click **`run-phantom-misses.cmd`** inside `phantom-misses-win-x64`. Do not launch from inside the ZIP viewer. The binaries are unsigned and may trigger a Windows reputation warning.
+
+## Run on Linux
+
+Requires a current x86-64 Linux desktop with working graphics/audio drivers. Close other osu! clients. Extract the entire Linux archive into a writable folder, open a terminal inside `phantom-misses-linux-x64`, and run:
 
 ```bash
 ./run-phantom-misses.sh
 ```
 
-The bundled `framework.ini` selects portable storage beside the executable. This starts with a separate database and settings instead of opening the normal lazer database. Keep this folder separate, do not replace it with the regular client folder, and do not redirect its storage to your regular installation. The launcher disables automatic updating through `OSU_EXTERNAL_UPDATE_PROVIDER` so the official updater cannot replace this fork.
+## Storage and updates
 
-Stay logged out for local practice. Import your `.osz` beatmaps and `.osk` skins by dragging them into this client. Existing maps can be exported from the normal client and imported here. The package does not include third-party beatmaps.
+The bundled `framework.ini` selects portable storage beside the executable. This starts with a separate database and settings instead of opening the normal lazer database. Keep this folder separate, do not replace it with the regular client folder, and do not redirect its storage to your regular installation. Always use the included launcher: it disables automatic updating through `OSU_EXTERNAL_UPDATE_PROVIDER` so the official updater cannot replace this fork.
+
+Close other osu! clients before launching because the clients share an IPC name. Stay logged out for local practice. Import your `.osz` beatmaps and `.osk` skins by dragging them into this client. Existing maps can be exported from the normal client and imported here. The packages do not include third-party beatmaps.
+
+For a newer release, extract into a new folder. Keep the old portable folder as your data backup; extracting a new package over it would replace the bundled configuration files. Export/import the maps and skins you need between the two clients.
+
+## Use the mod
 
 In osu!standard, open the mod selector and choose **Fun > Phantom Misses (PM)**. Start with the defaults:
 
@@ -38,14 +52,12 @@ This does not make real mistakes unknowable. Obvious misaims, slider breaks and 
 
 ## Verification and source
 
-The `Phantom Misses Linux` workflow builds the desktop solution with warnings treated as errors, runs the focused Phantom test fixture and osu! mod-validity checks, then publishes and packages a self-contained Release client. The package includes `COMMIT.txt` and the actual `.trx` reports under `verification/`.
+The **Phantom Misses Desktop** workflow builds and tests on native Windows and Linux runners separately, with warnings treated as errors. It runs the focused Phantom test fixture and osu! mod-validity checks, then publishes and packages self-contained Release clients. Packaging verifies that all intended tests were discovered and passed. Each package includes `COMMIT.txt`, `PHANTOM_VERSION`, and the actual `.trx` reports under `verification/`.
 
-The focused tests inspect active judgement containers, excluding preloaded pool placeholders. They check visible phantoms during a perfect run, full real combo/accuracy, sample masking, genuine misses, mandatory concealment, no-fail behaviour, deterministic target selection, warmup boundaries and spacing.
+The focused tests inspect active judgement containers, excluding preloaded pool placeholders. They check visible phantoms during a perfect run, full real combo/accuracy, sample masking, genuine misses, mandatory concealment, no-fail behaviour, deterministic target selection, warmup boundaries and spacing. Automated tests do not establish compatibility with every graphics/audio driver or skin.
 
-Builds and workflow artifacts: https://github.com/yyan115/osu/actions/workflows/phantom-misses.yml
+Pushes to `phantom-misses` and `master` build both platforms. A successful `master` run publishes `phantom-v<PHANTOM_VERSION>` only when that version has not already been released. Published releases are never overwritten. To publish an update, change `PHANTOM_VERSION` and `PHANTOM_RELEASE_NOTES.md` along with the code, then push to `master`. **Run workflow** on `master` can retry an unpublished version.
 
-Source branch: https://github.com/yyan115/osu/tree/phantom-misses
+[Releases](https://github.com/yyan115/osu/releases) | [Builds](https://github.com/yyan115/osu/actions/workflows/phantom-misses.yml) | [Source on master](https://github.com/yyan115/osu/tree/master)
 
-Development PR is inside this personal fork only: https://github.com/yyan115/osu/pull/1
-
-No upstream submission is intended.
+All development is in this personal fork. No upstream submission is intended.
