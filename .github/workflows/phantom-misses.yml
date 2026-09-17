@@ -39,6 +39,15 @@ jobs:
           --results-directory TestResults
           -- NUnit.ConsoleOut=0
 
+      - name: Validate osu mod registration and incompatibilities
+        run: >-
+          dotnet test osu.Game.Tests/osu.Game.Tests.csproj
+          -c Debug --no-build
+          --filter FullyQualifiedName~TestSceneModValidity.TestOsu
+          --logger 'trx;LogFileName=mod-validity.trx'
+          --results-directory TestResults
+          -- NUnit.ConsoleOut=0
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
