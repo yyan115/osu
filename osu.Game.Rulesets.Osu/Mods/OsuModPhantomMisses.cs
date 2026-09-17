@@ -64,7 +64,9 @@ namespace osu.Game.Rulesets.Osu.Mods
         [SettingSource("Mask target hitsounds", "Silence phantom targets so a successful hit does not reveal itself through its hitsound.")]
         public BindableBool MaskTargetHitsounds { get; } = new BindableBool(true);
 
-        [SettingSource("Play combo-break sound", "Give every displayed miss the same combo-break feedback so the sound cannot reveal whether it was real.")]
+        // Kept as a bindable for compatibility with existing local tests/settings. Its value is
+        // intentionally ignored: disabling audio normalisation would let native combo-break sounds
+        // reveal which displayed misses were genuine.
         public BindableBool PlayComboBreakSound { get; } = new BindableBool(true);
 
         [SettingSource("Hide live score HUD", "Hide score, accuracy, combo, health and other live HUD information that could reveal whether a miss was real.")]
@@ -247,8 +249,7 @@ namespace osu.Game.Rulesets.Osu.Mods
                                          && !gameplayClock.IsCatchingUp.Value
                                          && !gameplayClock.IsPaused.Value;
 
-            if (PlayComboBreakSound.Value
-                && canPlayGameplaySample
+            if (canPlayGameplaySample
                 && (showPhantomMiss || (realResult.Type == HitResult.Miss && !nativeComboBreakTriggered)))
             {
                 comboBreakSample.Play();
