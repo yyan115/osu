@@ -391,7 +391,6 @@ namespace osu.Game.Rulesets.Osu
             new OsuDifficultySection(),
             new FillFlowContainer
             {
-                RelativeSizeAxes = Axes.X,
                 AutoSizeAxes = Axes.Y,
                 Direction = FillDirection.Vertical,
                 Spacing = new Vector2(SetupScreen.SPACING),
