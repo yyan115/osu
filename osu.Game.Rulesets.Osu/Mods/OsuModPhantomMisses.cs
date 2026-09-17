@@ -70,7 +70,8 @@ namespace osu.Game.Rulesets.Osu.Mods
         // reveal which displayed misses were genuine.
         public BindableBool PlayComboBreakSound { get; } = new BindableBool(true);
 
-        [SettingSource("Hide live score HUD", "Hide score, accuracy, combo, health and other live HUD information that could reveal whether a miss was real.")]
+        // Kept as a bindable for compatibility with existing local tests/settings. Its value is
+        // intentionally ignored: live score, combo and health state would reveal genuine misses.
         public BindableBool HideLiveScoreHud { get; } = new BindableBool(true);
 
         [SettingSource("Prevent failure", "Keep the play running so a real miss cannot reveal itself by ending the map early.")]
@@ -132,9 +133,6 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         public void ApplyToHUD(HUDOverlay overlay)
         {
-            if (!HideLiveScoreHud.Value)
-                return;
-
             // This is the same public HUD switch used by Cinema.
             overlay.ShowHud.Value = false;
             overlay.ShowHud.Disabled = true;
@@ -144,9 +142,6 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         public void ApplyToPlayer(Player player)
         {
-            if (!HideLiveScoreHud.Value)
-                return;
-
             player.BreakOverlay.Hide();
             (player as ReplayPlayer)?.ReplayOverlay.Hide();
         }
