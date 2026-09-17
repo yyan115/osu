@@ -162,25 +162,34 @@ namespace osu.Game.Rulesets.Osu.Mods
                 return;
 
             Seed.Value ??= RNG.Next();
-            var random = new Random(Seed.Value.Value);
 
-            int averageSpacing = AverageSpacing.Value;
-            int minimumGap = Math.Max(1, averageSpacing / 2);
-            int maximumGap = Math.Max(minimumGap, averageSpacing * 3 / 2);
-            int index = WarmupCircles.Value;
-
-            while (true)
+            foreach (int index in SelectPhantomTargetIndices(circles.Length, AverageSpacing.Value, WarmupCircles.Value, Seed.Value.Value))
             {
-                index += random.Next(minimumGap, maximumGap + 1);
-
-                if (index >= circles.Length)
-                    break;
-
                 HitCircle target = circles[index];
                 phantomTargets.Add(target);
 
                 if (MaskTargetHitsounds.Value)
                     target.Samples.Clear();
+            }
+        }
+
+        internal static IEnumerable<int> SelectPhantomTargetIndices(int circleCount, int averageSpacing, int warmupCircles, int seed)
+        {
+            if (circleCount <= 0)
+                yield break;
+
+            var random = new Random(seed);
+            int minimumGap = Math.Max(1, averageSpacing / 2);
+            int maximumGap = Math.Max(minimumGap, averageSpacing * 3 / 2);
+
+            // Warmup is already an initial delay. Randomise only the phase of the first phantom
+            // inside one average-spacing window rather than forcing another full inter-phantom gap.
+            int index = warmupCircles + random.Next(0, Math.Max(1, averageSpacing));
+
+            while (index < circleCount)
+            {
+                yield return index;
+                index += random.Next(minimumGap, maximumGap + 1);
             }
         }
 

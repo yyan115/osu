@@ -20,6 +20,27 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
         private const int object_count = 50;
 
         [Test]
+        public void TestTargetSelectionRespectsWarmupAndSpacing()
+        {
+            const int circle_count = 2000;
+            const int average_spacing = 180;
+            const int warmup_circles = 40;
+            const int minimum_gap = average_spacing / 2;
+            const int maximum_gap = average_spacing * 3 / 2;
+
+            for (int seed = 0; seed < 20; seed++)
+            {
+                int[] targets = OsuModPhantomMisses.SelectPhantomTargetIndices(circle_count, average_spacing, warmup_circles, seed).ToArray();
+
+                Assert.That(targets, Is.Not.Empty);
+                Assert.That(targets[0], Is.InRange(warmup_circles, warmup_circles + average_spacing - 1));
+
+                for (int i = 1; i < targets.Length; i++)
+                    Assert.That(targets[i] - targets[i - 1], Is.InRange(minimum_gap, maximum_gap));
+            }
+        }
+
+        [Test]
         public void TestPhantomMissDoesNotChangeAuthoritativeJudgements()
         {
             bool sawPhantomMiss = false;
