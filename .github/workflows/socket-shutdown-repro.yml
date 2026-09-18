@@ -6,67 +6,52 @@ permissions:
   contents: read
 jobs:
   reproduce:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Prepare isolated probe
-        shell: bash
+      - name: Prepare isolated probe from verified production blobs
         run: |
-          mkdir -p /tmp/socket-probe
-          cp scripts/socket-probe/Program.cs /tmp/socket-probe/
-          sed -i 's/i < 25/i < 250/' /tmp/socket-probe/Program.cs
-          cp osu.Game/IPC/WebSocketServer.cs osu.Game/IPC/WebSocketChannel.cs osu.Game.Tests/IPC/WebSocketClient.cs /tmp/socket-probe/
-          cat > /tmp/socket-probe/probe.csproj <<'EOF'
+          $ErrorActionPreference = 'Stop'
+          $blob = git hash-object osu.Game/IPC/WebSocketServer.cs
+          if ($blob -ne '242e952d0659eb0d55ad669d70c26951f69541f5') { throw 'Unexpected server source' }
+          New-Item -ItemType Directory -Force probe | Out-Null
+          Copy-Item scripts/socket-probe/Program.cs probe/
+          $program = (Get-Content probe/Program.cs -Raw).Replace('i < 25', 'i < 250')
+          Set-Content probe/Program.cs $program
+          Copy-Item osu.Game/IPC/WebSocketServer.cs,osu.Game/IPC/WebSocketChannel.cs,osu.Game.Tests/IPC/WebSocketClient.cs probe/
+          @'
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup>
           </Project>
-          EOF
-      - name: Record baseline with first-chance diagnostics
-        shell: bash
+          '@ | Set-Content probe/probe.csproj
+          # Keep the standalone probe independent of the parent repository build properties.
+          '<Project />' | Set-Content probe/Directory.Build.props
+          '<Project />' | Set-Content probe/Directory.Build.targets
+          '55cea9a61d2e38f5406d0e4b0b99679d7368eb89' | Set-Content production-commit.txt
+      - name: Test all four shutdown scenarios across 1000 cycles
         run: |
-          set +e
-          dotnet run --project /tmp/socket-probe/probe.csproj -c Release > socket-original.log 2>&1
-          result=$?
-          cat socket-original.log
-          echo "Baseline exit: $result"
-          test "$result" -eq 1
-      - name: Test transport ordering and upgraded connection cleanup
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('/tmp/socket-probe/WebSocketServer.cs')
-          s = p.read_text()
-          start = s.index('            try\n            {\n                listener?.Stop();')
-          end = s.index('            try\n            {\n                await Task.WhenAll(channels.Values', start)
-          block = s[start:end]
-          s = s[:start] + s[end:]
-          marker = '            logger.Add(@"Websocket server stopped.");'
-          assert s.count(marker) == 1
-          s = s.replace(marker, block + marker)
-          old = 'wsChannel.ClosedPrematurely += () => onChannelClosed(channelId);'
-          assert s.count(old) == 1
-          s = s.replace(old, 'wsChannel.ClosedPrematurely += () => onChannelClosed(channelId, response);')
-          s = s.replace('private void onChannelClosed(int channelId)', 'private void onChannelClosed(int channelId, HttpListenerResponse response)')
-          old = '            if (channels.TryRemove(channelId, out var channel))\n                channel.Dispose();'
-          assert s.count(old) == 1
-          s = s.replace(old, '            if (channels.TryRemove(channelId, out var channel))\n            {\n                response.Abort();\n                channel.Dispose();\n            }')
-          p.write_text(s)
-          PY
-          set +e
-          dotnet run --project /tmp/socket-probe/probe.csproj -c Release > socket-reordered.log 2>&1
-          result=$?
-          cat socket-reordered.log
-          echo "Fixed exit: $result"
-          exit "$result"
+          dotnet run --project probe/probe.csproj -c Release *> socket-fixed.log
+          $code = $LASTEXITCODE
+          Get-Content socket-fixed.log
+          if ($code -ne 0) { exit $code }
+          if (-not (Select-String -Path socket-fixed.log -SimpleMatch 'TOTAL direct=0 unobserved=0')) { throw 'Missing successful stress summary' }
       - name: Preserve evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: socket-shutdown-probe
-          path: socket-*.log
+          name: socket-shutdown-proof-${{ matrix.os }}
+          path: |
+            socket-fixed.log
+            production-commit.txt
           if-no-files-found: error
