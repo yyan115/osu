@@ -73,6 +73,19 @@ jobs:
           --results-directory TestResults
           -- NUnit.ConsoleOut=0
 
+      - name: Recheck broader CI regressions in both threading modes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $filters = 'FullyQualifiedName~TestSceneSpectator|FullyQualifiedName~TestSceneHitErrorMeter|FullyQualifiedName~TestSceneColourHitErrorMeter|FullyQualifiedName~TestSceneBeatmapCarouselSetsSplitApart|FullyQualifiedName~TestSceneLoginOverlay|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneSampleOutput|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneLegacyReplayPlayback'
+          foreach ($mode in @('SingleThread', 'MultiThreaded')) {
+            $env:OSU_EXECUTION_MODE = $mode
+            dotnet test osu.Game.Tests/bin/Debug/net10.0/osu.Game.Tests.dll osu.Game.Rulesets.Taiko.Tests/bin/Debug/net10.0/osu.Game.Rulesets.Taiko.Tests.dll --filter $filters --logger "trx;LogFileName=ci-regressions-$mode.trx" --results-directory TestResults -- NUnit.ConsoleOut=0
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            [xml] $report = Get-Content "TestResults/ci-regressions-$mode.trx" -Raw
+            if ([int] $report.TestRun.ResultSummary.Counters.executed -eq 0) { throw "No regression tests executed for $mode" }
+          }
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7

@@ -36,6 +36,19 @@ foreach ($name in $reports.Keys) {
     Write-Host "$name : $($counters.passed) passed, $($counters.failed) failed."
 }
 
+# Broader regressions retain the platform's existing headless/explicit exclusions.
+# Require executed tests with no failures rather than counting excluded cases as passes.
+$regressionReports = @('ci-regressions-SingleThread.trx', 'ci-regressions-MultiThreaded.trx')
+foreach ($name in $regressionReports) {
+    [xml] $report = Get-Content -LiteralPath "TestResults/$name" -Raw
+    $counters = $report.TestRun.ResultSummary.Counters
+    if ([int] $counters.executed -le 0 -or [int] $counters.failed -ne 0 -or
+        [int] $counters.passed -ne [int] $counters.executed) {
+        throw "The broader regression suite did not pass completely: $name"
+    }
+    Write-Host "$name : $($counters.passed) passed, $($counters.failed) failed."
+}
+
 $folderName = "phantom-misses-$RuntimeIdentifier"
 $package = Join-Path 'artifacts' $folderName
 $executable = if ($RuntimeIdentifier -eq 'win-x64') { 'osu!.exe' } else { 'osu!' }
@@ -51,7 +64,7 @@ Set-Content -LiteralPath (Join-Path $package 'framework.ini') -Value 'WindowMode
 Set-Content -LiteralPath (Join-Path $package 'COMMIT.txt') -Value $env:GITHUB_SHA -Encoding utf8NoBOM
 Set-Content -LiteralPath (Join-Path $package 'BUILD-CHANNEL.txt') -Value $env:GITHUB_REF -Encoding utf8NoBOM
 $verification = New-Item -ItemType Directory -Path (Join-Path $package 'verification') -Force
-foreach ($name in $reports.Keys) {
+foreach ($name in @($reports.Keys) + $regressionReports) {
     Copy-Item -LiteralPath "TestResults/$name" -Destination $verification.FullName
 }
 New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
