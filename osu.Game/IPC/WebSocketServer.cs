@@ -136,6 +136,11 @@ namespace osu.Game.IPC
                     {
                         // occurs on Windows when the listener is stopped.
                     }
+                    catch (ObjectDisposedException) when (runningTokenSource.IsCancellationRequested)
+                    {
+                        // A pending accept callback can complete after shutdown has disposed the
+                        // listener or its signal. Only treat disposal as expected during shutdown.
+                    }
                 }, listener);
                 WaitHandle.WaitAny([contextResetEvent.WaitHandle, runningTokenSource.Token.WaitHandle]);
 
