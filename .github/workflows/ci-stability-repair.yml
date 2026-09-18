@@ -5,10 +5,9 @@ on:
     paths: [.github/workflows/ci-stability-repair.yml, scripts/ci-stability-repair.patch]
 permissions:
   contents: write
-  actions: write
 concurrency:
   group: ci-stability-repair
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   repair:
     if: github.repository == 'yyan115/osu' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
@@ -16,18 +15,17 @@ jobs:
     timeout-minutes: 20
     env:
       OSU_EXECUTION_MODE: SingleThread
-      GH_TOKEN: ${{ github.token }}
       BRANCH: fix/phantom-miss-fidelity
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
       - name: Verify base and install regression only
         run: |
-          test "$(git rev-parse HEAD^)" = c2a35c1d3799f1463c960b3fd8f781acd89b8a44
+          git merge-base --is-ancestor c2a35c1d3799f1463c960b3fd8f781acd89b8a44 HEAD
           test "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$GITHUB_SHA"
           git apply --index --include=osu.Game.Tests/Visual/Gameplay/TestScenePlayerSkinDependencies.cs scripts/ci-stability-repair.patch
           dotnet build osu.Desktop.slnf -c Debug -warnaserror -p:EnforceCodeStyleInBuild=true
@@ -51,6 +49,7 @@ jobs:
       - name: Apply fixes and verify regression
         run: |
           git apply --index --exclude=osu.Game.Tests/Visual/Gameplay/TestScenePlayerSkinDependencies.cs scripts/ci-stability-repair.patch
+          git restore --staged --worktree .github/workflows/phantom-misses.yml
           git diff --cached --check
           dotnet build osu.Desktop.slnf -c Debug -warnaserror -p:EnforceCodeStyleInBuild=true
           dotnet test osu.Game.Tests/osu.Game.Tests.csproj -c Debug --no-build --filter FullyQualifiedName~TestScenePlayerSkinDependencies --logger 'trx;LogFileName=after.trx' --results-directory RepairResults -- NUnit.ConsoleOut=0
@@ -61,17 +60,19 @@ jobs:
           c = root.find('t:ResultSummary/t:Counters', ns)
           assert c is not None and int(c.get('passed')) == 4 and int(c.get('failed')) == 0
           PY
-      - name: Commit only to the development branch and start full verification
+      - name: Commit verified source only to the development branch
         run: |
           test "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$GITHUB_SHA"
-          git rm .github/workflows/ci-stability-repair.yml scripts/ci-stability-repair.patch
+          python - <<'PY'
+          import subprocess
+          paths = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
+          assert paths == {'osu.Game/Screens/Play/Player.cs', 'osu.Game.Tests/ImportTest.cs', 'osu.Game.Tests/Visual/Gameplay/TestScenePlayerSkinDependencies.cs'}, paths
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix: register HUD dependencies before async skin loads and observe import hosts'
           git push origin "HEAD:refs/heads/$BRANCH"
           git rev-parse HEAD | tee RepairResults/COMMIT.txt
-          gh api -X POST repos/yyan115/osu/actions/workflows/ci.yml/dispatches -f ref="$BRANCH"
-          gh api -X POST repos/yyan115/osu/actions/workflows/phantom-misses.yml/dispatches -f ref="$BRANCH"
       - name: Preserve before and after evidence
         if: always()
         uses: actions/upload-artifact@v7
