@@ -18,6 +18,7 @@ jobs:
         run: |
           mkdir -p /tmp/socket-probe
           cp scripts/socket-probe/Program.cs /tmp/socket-probe/
+          sed -i 's/i < 25/i < 250/' /tmp/socket-probe/Program.cs
           cp osu.Game/IPC/WebSocketServer.cs osu.Game/IPC/WebSocketChannel.cs osu.Game.Tests/IPC/WebSocketClient.cs /tmp/socket-probe/
           cat > /tmp/socket-probe/probe.csproj <<'EOF'
           <Project Sdk="Microsoft.NET.Sdk">
