@@ -18,7 +18,8 @@ namespace osu.Game.Screens.Play.HUD.HitErrorMeters
     {
         protected HitWindows HitWindows { get; private set; }
 
-        [Resolved]
+        // Skin components can be loaded outside a player, where there is no live score.
+        [Resolved(canBeNull: true)]
         private ScoreProcessor processor { get; set; }
 
         [Resolved]
@@ -45,7 +46,8 @@ namespace osu.Game.Screens.Play.HUD.HitErrorMeters
             if (gameplayClockContainer != null)
                 gameplayClockContainer.OnSeek += Clear;
 
-            processor.NewJudgement += processorNewJudgement;
+            if (processor != null)
+                processor.NewJudgement += processorNewJudgement;
         }
 
         // Scheduled as meter implementations are likely going to change/add drawables when reacting to this.

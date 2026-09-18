@@ -82,6 +82,11 @@ namespace osu.Game.Tests.Visual.SongSelect
         {
             AddBeatmaps(3, splitApart: true);
             AddBeatmaps(3, splitApart: false);
+            AddUntilStep("all beatmaps tracked", () => Carousel.ItemsTracked, () => Is.EqualTo(36));
+            // Flush the final queued item change before navigating. Existing panels may
+            // belong to an earlier filter operation and are not a completion signal.
+            ApplyToFilterAndWaitForFilter("filter complete beatmap list", null);
+            AddUntilStep("all beatmaps presented", () => Carousel.MatchedBeatmapsCount, () => Is.EqualTo(36));
             WaitForDrawablePanels();
 
             SelectNextSet();
