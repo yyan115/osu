@@ -24,7 +24,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $blob = git hash-object osu.Game/IPC/WebSocketServer.cs
-          if ($blob -ne '242e952d0659eb0d55ad669d70c26951f69541f5') { throw 'Unexpected server source' }
+          if ($blob -ne '2d3193563031322f53a5a2a734025ff4896484c2') { throw 'Unexpected server source' }
           New-Item -ItemType Directory -Force probe | Out-Null
           Copy-Item scripts/socket-probe/Program.cs probe/
           $program = (Get-Content probe/Program.cs -Raw).Replace('i < 25', 'i < 250')
@@ -35,10 +35,9 @@ jobs:
             <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup>
           </Project>
           '@ | Set-Content probe/probe.csproj
-          # Keep the standalone probe independent of the parent repository build properties.
           '<Project />' | Set-Content probe/Directory.Build.props
           '<Project />' | Set-Content probe/Directory.Build.targets
-          '55cea9a61d2e38f5406d0e4b0b99679d7368eb89' | Set-Content production-commit.txt
+          $blob | Set-Content server-blob.txt
       - name: Test all four shutdown scenarios across 1000 cycles
         run: |
           dotnet run --project probe/probe.csproj -c Release *> socket-fixed.log
@@ -53,5 +52,5 @@ jobs:
           name: socket-shutdown-proof-${{ matrix.os }}
           path: |
             socket-fixed.log
-            production-commit.txt
+            server-blob.txt
           if-no-files-found: error
