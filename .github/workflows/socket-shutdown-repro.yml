@@ -34,7 +34,7 @@ jobs:
           cat socket-original.log
           echo "Baseline exit: $result"
           test "$result" -eq 1
-      - name: Test channel shutdown before listener shutdown
+      - name: Test transport ordering and upgraded connection cleanup
         shell: bash
         run: |
           python - <<'PY'
@@ -47,13 +47,21 @@ jobs:
           s = s[:start] + s[end:]
           marker = '            logger.Add(@"Websocket server stopped.");'
           assert s.count(marker) == 1
-          p.write_text(s.replace(marker, block + marker))
+          s = s.replace(marker, block + marker)
+          old = 'wsChannel.ClosedPrematurely += () => onChannelClosed(channelId);'
+          assert s.count(old) == 1
+          s = s.replace(old, 'wsChannel.ClosedPrematurely += () => onChannelClosed(channelId, response);')
+          s = s.replace('private void onChannelClosed(int channelId)', 'private void onChannelClosed(int channelId, HttpListenerResponse response)')
+          old = '            if (channels.TryRemove(channelId, out var channel))\n                channel.Dispose();'
+          assert s.count(old) == 1
+          s = s.replace(old, '            if (channels.TryRemove(channelId, out var channel))\n            {\n                response.Abort();\n                channel.Dispose();\n            }')
+          p.write_text(s)
           PY
           set +e
           dotnet run --project /tmp/socket-probe/probe.csproj -c Release > socket-reordered.log 2>&1
           result=$?
           cat socket-reordered.log
-          echo "Reordered exit: $result"
+          echo "Fixed exit: $result"
           exit "$result"
       - name: Preserve evidence
         if: always()
