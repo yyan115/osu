@@ -676,7 +676,6 @@ namespace osu.Game.Screens.Play
         /// </list>
         /// </remarks>
         /// <param name="skipTransition">Whether the exit should perform without a transition, because the screen had faded to black already.</param>
-        /// <returns>Whether this call resulted in a final exit.</returns>
         protected bool PerformExit(bool skipTransition = false)
         {
             // Matching osu!stable behaviour, if the results screen is pending and the user requests an exit,
@@ -956,6 +955,12 @@ namespace osu.Game.Screens.Play
 
         private bool onFail()
         {
+            // Health judgements can be rewound after the player has entered its terminal
+            // failed state. Acknowledge repeated notifications without starting another
+            // fail animation or concluding/submitting the same score twice.
+            if (GameplayState.HasFailed)
+                return true;
+
             // Failing after the quit sequence has started may cause weird side effects with the fail animation / effects.
             if (GameplayState.HasQuit)
                 return false;
