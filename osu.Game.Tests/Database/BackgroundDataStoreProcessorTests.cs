@@ -2,12 +2,15 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Extensions;
 using osu.Framework.Testing;
+using osu.Framework.Testing.Drawables.Steps;
 using osu.Game.Beatmaps;
 using osu.Game.Database;
 using osu.Game.Rulesets;
@@ -65,7 +68,7 @@ namespace osu.Game.Tests.Database
 
             TestBackgroundDataStoreProcessor processor = null!;
             AddStep("Run background processor", () => Add(processor = new TestBackgroundDataStoreProcessor()));
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Difficulties repopulated", () =>
             {
@@ -115,7 +118,7 @@ namespace osu.Game.Tests.Database
             });
 
             AddStep("Set not playing", () => isPlaying.Value = LocalUserPlayingState.NotPlaying);
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Difficulties repopulated", () =>
             {
@@ -151,7 +154,7 @@ namespace osu.Game.Tests.Database
 
             TestBackgroundDataStoreProcessor processor = null!;
             AddStep("Run background processor", () => Add(processor = new TestBackgroundDataStoreProcessor()));
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Score version upgraded", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.TotalScoreVersion), () => Is.EqualTo(LegacyScoreEncoder.LATEST_VERSION));
             AddAssert("Score not marked as failed", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.BackgroundReprocessingFailed), () => Is.False);
@@ -181,7 +184,7 @@ namespace osu.Game.Tests.Database
 
             TestBackgroundDataStoreProcessor processor = null!;
             AddStep("Run background processor", () => Add(processor = new TestBackgroundDataStoreProcessor()));
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Score marked as failed", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.BackgroundReprocessingFailed), () => Is.True);
             AddAssert("Score version not upgraded", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.TotalScoreVersion), () => Is.EqualTo(scoreVersion));
@@ -209,7 +212,7 @@ namespace osu.Game.Tests.Database
             })));
 
             AddStep("Run background processor", () => Add(processor = new TestBackgroundDataStoreProcessor()));
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Score not marked as failed", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.BackgroundReprocessingFailed), () => Is.False);
             AddAssert("Score version not upgraded", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.TotalScoreVersion), () => Is.EqualTo(30000001));
@@ -236,11 +239,54 @@ namespace osu.Game.Tests.Database
 
             TestBackgroundDataStoreProcessor processor = null!;
             AddStep("Run background processor", () => Add(processor = new TestBackgroundDataStoreProcessor()));
-            AddUntilStep("Wait for completion", () => processor.Completed);
+            AddStep(new BackgroundProcessingWaitStep(() => processor.CompletionTask) { IsSetupStep = false });
 
             AddAssert("Score version upgraded", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.TotalScoreVersion), () => Is.EqualTo(LegacyScoreEncoder.LATEST_VERSION));
             AddAssert("Total score corrected", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.TotalScore), () => Is.EqualTo(1_082_000));
             AddAssert("Score not marked as failed", () => Realm.Run(r => r.Find<ScoreInfo>(scoreInfo.ID)!.BackgroundReprocessingFailed), () => Is.False);
+        }
+
+        // Background processing performs real database writes and difficulty calculations for the
+        // entire imported set. Give it a bounded budget independent of the 10-second UI-step limit.
+        private partial class BackgroundProcessingWaitStep : StepButton
+        {
+            private readonly Func<Task> getTask;
+            private readonly Stopwatch elapsed = new Stopwatch();
+            private bool completed;
+
+            public override int RequiredRepetitions => completed ? 0 : int.MaxValue;
+
+            public BackgroundProcessingWaitStep(Func<Task> getTask)
+            {
+                this.getTask = getTask;
+                Text = "Wait for background processing completion";
+                Action = checkCompletion;
+            }
+
+            public override void Reset()
+            {
+                base.Reset();
+                elapsed.Reset();
+                completed = false;
+            }
+
+            private void checkCompletion()
+            {
+                elapsed.Start();
+                Task task = getTask();
+
+                if (task.IsCompleted)
+                {
+                    // Completion must be successful. Faults and cancellation are not readiness.
+                    task.GetAwaiter().GetResult();
+                    completed = true;
+                    Success();
+                    return;
+                }
+
+                Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(60)),
+                    $"Background processing did not complete within 60 seconds (task status: {task.Status}).");
+            }
         }
 
         public partial class TestBackgroundDataStoreProcessor : BackgroundDataStoreProcessor
@@ -249,7 +295,7 @@ namespace osu.Game.Tests.Database
 
             protected override bool SkipProcessing => false;
 
-            public bool Completed => ProcessingTask.IsCompleted;
+            public Task CompletionTask => ProcessingTask;
         }
     }
 }
