@@ -237,15 +237,8 @@ namespace osu.Game.IPC
                 }
             }
 
-            try
-            {
-                listener?.Stop();
-            }
-            catch (ObjectDisposedException)
-            {
-                // observed to intermittently fire on unices in unclear circumstances. tragic, but also irrelevant at this point. the point is to stop.
-            }
-
+            // Stop and observe channel reads before the listener disposes their network streams.
+            // Closing the transport first can leave the underlying socket read tasks unobserved.
             try
             {
                 await Task.WhenAll(channels.Values.Select(ch => ch.StopAsync(stoppingToken)).ToArray()).ConfigureAwait(false);
@@ -253,6 +246,15 @@ namespace osu.Game.IPC
             catch (OperationCanceledException)
             {
                 // has to be caught manually because outer task isn't accepting `stoppingToken`.
+            }
+
+            try
+            {
+                listener?.Stop();
+            }
+            catch (ObjectDisposedException)
+            {
+                // observed to intermittently fire on unices in unclear circumstances. tragic, but also irrelevant at this point. the point is to stop.
             }
 
             logger.Add(@"Websocket server stopped.");
