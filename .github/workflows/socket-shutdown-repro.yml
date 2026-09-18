@@ -13,107 +13,51 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Prepare standalone probe using the exact repository implementation
+      - name: Prepare isolated probe
         shell: bash
         run: |
           mkdir -p /tmp/socket-probe
-          cat > /tmp/socket-probe/probe.csproj <<EOF
+          cp scripts/socket-probe/Program.cs /tmp/socket-probe/
+          cp osu.Game/IPC/WebSocketServer.cs osu.Game/IPC/WebSocketChannel.cs osu.Game.Tests/IPC/WebSocketClient.cs /tmp/socket-probe/
+          cat > /tmp/socket-probe/probe.csproj <<'EOF'
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup>
-            <ItemGroup>
-              <Compile Include="$GITHUB_WORKSPACE/osu.Game/IPC/WebSocketServer.cs" />
-              <Compile Include="$GITHUB_WORKSPACE/osu.Game/IPC/WebSocketChannel.cs" />
-              <Compile Include="$GITHUB_WORKSPACE/osu.Game.Tests/IPC/WebSocketClient.cs" />
-            </ItemGroup>
           </Project>
           EOF
-          cat > /tmp/socket-probe/Program.cs <<'CS'
-          using System;
-          using System.Collections.Concurrent;
-          using System.Runtime.CompilerServices;
-          using System.Threading;
-          using System.Threading.Tasks;
-          using osu.Game.IPC;
-          using osu.Game.Tests.IPC;
-          class Program
-          {
-              private static readonly ConcurrentQueue<Exception> unobserved = new();
-              private static int failures;
-              static async Task<int> Main()
-              {
-                  TaskScheduler.UnobservedTaskException += (_, e) =>
-                  {
-                      unobserved.Enqueue(e.Exception);
-                      // The probe records and fails on every occurrence. No production handler is modified.
-                      e.SetObserved();
-                  };
-                  foreach (bool serverFirst in new[] { false, true })
-                  foreach (bool hard in new[] { false, true })
-                  {
-                      int before = unobserved.Count;
-                      for (int i = 0; i < 25; i++)
-                      {
-                          try { await RunPair(serverFirst, hard).WaitAsync(TimeSpan.FromSeconds(5)); }
-                          catch (Exception ex) { failures++; Console.WriteLine($"Direct failure: {ex}"); }
-                          await Task.Delay(20);
-                          GC.Collect();
-                          GC.WaitForPendingFinalizers();
-                          GC.Collect();
-                      }
-                      await Task.Delay(200);
-                      GC.Collect();
-                      GC.WaitForPendingFinalizers();
-                      Console.WriteLine($"serverFirst={serverFirst} hard={hard}: {unobserved.Count - before} unobserved errors");
-                  }
-                  foreach (var ex in unobserved) Console.WriteLine(ex);
-                  Console.WriteLine($"TOTAL direct={failures} unobserved={unobserved.Count}");
-                  return failures == 0 && unobserved.IsEmpty ? 0 : 1;
-              }
-              [MethodImpl(MethodImplOptions.NoInlining)]
-              private static async Task RunPair(bool serverFirst, bool hard)
-              {
-                  using var server = new WebSocketServer(54321);
-                  using var client = new WebSocketClient(54321);
-                  var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                  server.ClientConnected += _ => accepted.TrySetResult();
-                  await server.StartAsync();
-                  await client.Start();
-                  await accepted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-                  var token = new CancellationToken(hard);
-                  if (serverFirst)
-                  {
-                      await server.StopAsync(token);
-                      await client.StopAsync();
-                  }
-                  else
-                  {
-                      await client.StopAsync(token);
-                      await server.StopAsync();
-                  }
-              }
-          }
-          namespace osu.Framework.Logging
-          {
-              public enum LogLevel { Verbose, Important, Error }
-              public sealed class Logger
-              {
-                  public static Logger GetLogger(string name) => new();
-                  public void Add(string text, LogLevel level = LogLevel.Verbose, Exception? exception = null)
-                  {
-                      if (level == LogLevel.Error) Console.WriteLine($"{text} {exception}");
-                  }
-              }
-          }
-          CS
-      - name: Run probe
+      - name: Record baseline with first-chance diagnostics
         shell: bash
         run: |
-          set -o pipefail
-          dotnet run --project /tmp/socket-probe/probe.csproj -c Release | tee socket-probe.log
+          set +e
+          dotnet run --project /tmp/socket-probe/probe.csproj -c Release > socket-original.log 2>&1
+          result=$?
+          cat socket-original.log
+          echo "Baseline exit: $result"
+          test "$result" -eq 1
+      - name: Test channel shutdown before listener shutdown
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/socket-probe/WebSocketServer.cs')
+          s = p.read_text()
+          start = s.index('            try\n            {\n                listener?.Stop();')
+          end = s.index('            try\n            {\n                await Task.WhenAll(channels.Values', start)
+          block = s[start:end]
+          s = s[:start] + s[end:]
+          marker = '            logger.Add(@"Websocket server stopped.");'
+          assert s.count(marker) == 1
+          p.write_text(s.replace(marker, block + marker))
+          PY
+          set +e
+          dotnet run --project /tmp/socket-probe/probe.csproj -c Release > socket-reordered.log 2>&1
+          result=$?
+          cat socket-reordered.log
+          echo "Reordered exit: $result"
+          exit "$result"
       - name: Preserve evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: socket-shutdown-probe
-          path: socket-probe.log
+          path: socket-*.log
           if-no-files-found: error
