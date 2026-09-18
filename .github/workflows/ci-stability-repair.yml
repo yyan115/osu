@@ -41,7 +41,7 @@ jobs:
           root = E.parse('RepairResults/before.trx').getroot()
           ns = {'t': root.tag[1:].split('}')[0]}
           failures = [r for r in root.findall('t:Results/t:UnitTestResult', ns) if r.get('outcome') == 'Failed']
-          assert len(failures) == 4, 'Expected all four rulesets to detect the old ordering'
+          assert {r.get('testName') for r in failures} == {'TestOsu', 'TestTaiko', 'TestCatch', 'TestMania'}
           for failure in failures:
               text = ''.join(failure.itertext())
               assert 'HUD dependencies registered before skin loading' in text, text
@@ -57,8 +57,9 @@ jobs:
           import xml.etree.ElementTree as E
           root = E.parse('RepairResults/after.trx').getroot()
           ns = {'t': root.tag[1:].split('}')[0]}
-          c = root.find('t:ResultSummary/t:Counters', ns)
-          assert c is not None and int(c.get('passed')) == 4 and int(c.get('failed')) == 0
+          results = root.findall('t:Results/t:UnitTestResult', ns)
+          assert {'TestOsu', 'TestTaiko', 'TestCatch', 'TestMania'} <= {r.get('testName') for r in results}
+          assert len(results) == 5 and all(r.get('outcome') == 'Passed' for r in results)
           PY
       - name: Commit verified source only to the development branch
         run: |
