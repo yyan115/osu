@@ -80,8 +80,8 @@ namespace osu.Game.Tests.Visual
 
             // Full startup imports resources and loads the intro asynchronously. Use a bounded
             // startup budget rather than the short timeout intended for ordinary UI interactions.
-            AddStep(new StartupWaitStep("Wait for load", () => Game.IsLoaded));
-            AddStep(new StartupWaitStep("Wait for intro", () => Game.ScreenStack.CurrentScreen is IntroScreen));
+            AddStep(new StartupWaitStep("Wait for load", () => Game.IsLoaded) { IsSetupStep = true });
+            AddStep(new StartupWaitStep("Wait for intro", () => Game.ScreenStack.CurrentScreen is IntroScreen) { IsSetupStep = true });
         }
 
         [TearDownSteps]
