@@ -464,8 +464,16 @@ namespace osu.Game.Rulesets.Objects.Drawables
             throw new InvalidOperationException(
                 $"Should never clear a {nameof(DrawableHitObject)} as the base implementation adds components. If attempting to use {nameof(InternalChild)} or {nameof(InternalChildren)}, using {nameof(AddInternal)} or {nameof(AddRangeInternal)} instead.");
 
+        /// <summary>
+        /// Resolves the visual armed state without modifying the authoritative judgement.
+        /// Presentation-only overrides must preserve input and scoring through <see cref="Result"/>.
+        /// </summary>
+        protected virtual ArmedState GetPresentationState(ArmedState requestedState) => requestedState;
+
         protected void UpdateState(ArmedState newState, bool force = false)
         {
+            newState = GetPresentationState(newState);
+
             if (State.Value == newState && !force)
                 return;
 
@@ -690,7 +698,7 @@ namespace osu.Game.Rulesets.Objects.Drawables
         /// The time at which judgement dependent state transforms should be applied. This is equivalent of the (end) time of the object, in addition to any judgement offset.
         /// This is used to offset calls to <see cref="UpdateHitStateTransforms"/>.
         /// </summary>
-        public double HitStateUpdateTime => Result?.TimeAbsolute ?? HitObject.GetEndTime();
+        public virtual double HitStateUpdateTime => Result?.TimeAbsolute ?? HitObject.GetEndTime();
 
         /// <summary>
         /// Will be called at least once after this <see cref="DrawableHitObject"/> has become not alive.

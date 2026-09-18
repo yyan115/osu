@@ -3,12 +3,14 @@
 
 #nullable disable
 
+using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics.Containers;
 using osu.Game.Audio;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Scoring;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Skinning;
 
 namespace osu.Game.Screens.Play
@@ -22,6 +24,7 @@ namespace osu.Game.Screens.Play
         private Bindable<bool> alwaysPlayFirst;
 
         private double? firstBreakTime;
+        private bool audioOverridden;
 
         public ComboEffects(ScoreProcessor processor)
         {
@@ -29,10 +32,11 @@ namespace osu.Game.Screens.Play
         }
 
         [BackgroundDependencyLoader]
-        private void load(OsuConfigManager config)
+        private void load(OsuConfigManager config, GameplayState gameplayState = null)
         {
             InternalChild = comboBreakSample = new SkinnableSound(new SampleInfo("Gameplay/combobreak"));
             alwaysPlayFirst = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
+            audioOverridden = gameplayState?.Mods.Any(mod => mod is IOverridesComboBreakAudio) == true;
         }
 
         protected override void LoadComplete()
@@ -49,6 +53,9 @@ namespace osu.Game.Screens.Play
 
         private void onComboChange(ValueChangedEvent<int> combo)
         {
+            if (audioOverridden)
+                return;
+
             // handle the case of rewinding before the first combo break time.
             if (gameplayClock.CurrentTime < firstBreakTime)
                 firstBreakTime = null;

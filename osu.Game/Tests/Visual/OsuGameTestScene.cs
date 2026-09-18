@@ -5,6 +5,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using NUnit.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Development;
@@ -14,6 +16,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
 using osu.Framework.Testing;
+using osu.Framework.Testing.Drawables.Steps;
 using osu.Game.Beatmaps;
 using osu.Game.Configuration;
 using osu.Game.Database;
@@ -75,8 +78,10 @@ namespace osu.Game.Tests.Visual
                 CreateGame();
             });
 
-            AddUntilStep("Wait for load", () => Game.IsLoaded);
-            AddUntilStep("Wait for intro", () => Game.ScreenStack.CurrentScreen is IntroScreen);
+            // Full startup imports resources and loads the intro asynchronously. Use a bounded
+            // startup budget rather than the short timeout intended for ordinary UI interactions.
+            AddStep(new StartupWaitStep("Wait for load", () => Game.IsLoaded) { IsSetupStep = true });
+            AddStep(new StartupWaitStep("Wait for intro", () => Game.ScreenStack.CurrentScreen is IntroScreen) { IsSetupStep = true });
         }
 
         [TearDownSteps]
@@ -119,6 +124,43 @@ namespace osu.Game.Tests.Visual
         /// Dismisses any notifications pushed which block from interacting with the game (or block screens from loading, e.g. <see cref="Player"/>).
         /// </summary>
         protected void DismissAnyNotifications() => Game.Notifications.State.Value = Visibility.Hidden;
+
+        private partial class StartupWaitStep : StepButton
+        {
+            private readonly Func<bool> ready;
+            private readonly Stopwatch elapsed = new Stopwatch();
+            private bool completed;
+
+            public override int RequiredRepetitions => completed ? 0 : int.MaxValue;
+
+            public StartupWaitStep(string description, Func<bool> ready)
+            {
+                this.ready = ready;
+                Text = description;
+                Action = checkReady;
+            }
+
+            public override void Reset()
+            {
+                base.Reset();
+                elapsed.Reset();
+                completed = false;
+            }
+
+            private void checkReady()
+            {
+                elapsed.Start();
+
+                if (ready())
+                {
+                    completed = true;
+                    Success();
+                    return;
+                }
+
+                Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(60)), $"{Text} timed out during game startup.");
+            }
+        }
 
         public partial class TestOsuGame : OsuGame
         {

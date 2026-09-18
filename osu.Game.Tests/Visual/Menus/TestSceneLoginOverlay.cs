@@ -177,7 +177,16 @@ namespace osu.Game.Tests.Visual.Menus
                 InputManager.Click(MouseButton.Left);
             });
 
-            AddStep("enter code", () => loginOverlay.ChildrenOfType<OsuTextBox>().First().Text = "deadbeef");
+            // The fallback request and replacement form load asynchronously. Do not put
+            // the eight-character email code into the still-active six-character TOTP box.
+            AddUntilStep("email verification form loaded", () =>
+                loginOverlay.ChildrenOfType<SecondFactorAuthForm>()
+                            .SelectMany(form => form.ChildrenOfType<OsuTextBox>())
+                            .Any(textBox => textBox is not OsuNumberBox));
+
+            AddStep("enter code", () =>
+                loginOverlay.ChildrenOfType<SecondFactorAuthForm>().Single()
+                            .ChildrenOfType<OsuTextBox>().Single(textBox => textBox is not OsuNumberBox).Text = "deadbeef");
             assertAPIState(APIState.Online);
             assertDropdownState(UserAction.Online);
 

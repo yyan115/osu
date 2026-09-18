@@ -8,6 +8,7 @@ using osu.Framework.Testing;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Taiko.Objects.Drawables;
 using osu.Game.Rulesets.Taiko.UI;
+using osu.Game.Tests.Visual;
 
 namespace osu.Game.Rulesets.Taiko.Tests
 {
@@ -17,6 +18,23 @@ namespace osu.Game.Rulesets.Taiko.Tests
     [HeadlessTest]
     public partial class TestSceneSampleOutput : TestSceneTaikoPlayer
     {
+        private readonly List<string> actualSampleNames = new List<string>();
+
+        protected override TestPlayer CreatePlayer(Ruleset ruleset)
+        {
+            actualSampleNames.Clear();
+
+            var player = base.CreatePlayer(ruleset);
+            // Subscribe before the gameplay clock starts. Waiting for the player-loaded step
+            // can already miss judgements on a fast headless run.
+            player.OnLoadComplete += _ => player.DrawableRuleset.Playfield.NewResult += (dho, _) =>
+            {
+                if (dho is DrawableHit hit)
+                    actualSampleNames.Add(string.Join(',', hit.GetSamples().Select(s => s.Name)));
+            };
+            return player;
+        }
+
         public override void SetUpSteps()
         {
             base.SetUpSteps();
@@ -32,18 +50,6 @@ namespace osu.Game.Rulesets.Taiko.Tests
                 string.Empty,
                 string.Empty,
             };
-
-            var actualSampleNames = new List<string>();
-
-            // due to pooling we can't access all samples right away due to object re-use,
-            // so we need to collect as we go.
-            AddStep("collect sample names", () => Player.DrawableRuleset.Playfield.NewResult += (dho, _) =>
-            {
-                if (!(dho is DrawableHit h))
-                    return;
-
-                actualSampleNames.Add(string.Join(',', h.GetSamples().Select(s => s.Name)));
-            });
 
             AddUntilStep("all samples collected", () => actualSampleNames.Count == expectedSampleNames.Length);
 

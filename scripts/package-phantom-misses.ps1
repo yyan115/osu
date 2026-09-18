@@ -14,7 +14,7 @@ if ($env:GITHUB_SHA -notmatch '^[0-9a-f]{40}$') {
 
 # Fail even if the test runner returned success without discovering the intended tests.
 $reports = @{
-    'phantom-misses.trx' = 9
+    'phantom-misses.trx' = 23
     'mod-validity.trx' = 1
 }
 foreach ($name in $reports.Keys) {
@@ -24,6 +24,27 @@ foreach ($name in $reports.Keys) {
         [int] $counters.passed -ne [int] $counters.total -or
         [int] $counters.failed -ne 0) {
         throw "The required test suite did not pass completely: $name"
+    }
+    if ($name -eq 'phantom-misses.trx') {
+        $classes = @($report.TestRun.TestDefinitions.UnitTest.TestMethod.className)
+        foreach ($fixture in @('TestSceneOsuModPhantomMisses', 'TestSceneOsuModPhantomMissesSkins', 'TestSceneOsuModPhantomMissesMixed')) {
+            if (-not ($classes | Where-Object { $_ -match "\.$fixture," -or $_ -match "\.$fixture`$" })) {
+                throw "Required test fixture was not discovered: $fixture"
+            }
+        }
+    }
+    Write-Host "$name : $($counters.passed) passed, $($counters.failed) failed."
+}
+
+# Broader regressions retain the platform's existing headless/explicit exclusions.
+# Require executed tests with no failures rather than counting excluded cases as passes.
+$regressionReports = @('ci-regressions-SingleThread.trx', 'ci-regressions-MultiThreaded.trx')
+foreach ($name in $regressionReports) {
+    [xml] $report = Get-Content -LiteralPath "TestResults/$name" -Raw
+    $counters = $report.TestRun.ResultSummary.Counters
+    if ([int] $counters.executed -le 0 -or [int] $counters.failed -ne 0 -or
+        [int] $counters.passed -ne [int] $counters.executed) {
+        throw "The broader regression suite did not pass completely: $name"
     }
     Write-Host "$name : $($counters.passed) passed, $($counters.failed) failed."
 }
@@ -37,11 +58,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $package $executable) -PathType Leaf
 
 Copy-Item -LiteralPath 'LICENCE' -Destination $package
 Copy-Item -LiteralPath 'PHANTOM_MISSES.md' -Destination (Join-Path $package 'README-PHANTOM-MISSES.md')
+Copy-Item -LiteralPath 'PHANTOM_FIDELITY.md' -Destination $package
 Copy-Item -LiteralPath 'PHANTOM_VERSION' -Destination $package
 Set-Content -LiteralPath (Join-Path $package 'framework.ini') -Value 'WindowMode = Windowed' -Encoding utf8NoBOM
 Set-Content -LiteralPath (Join-Path $package 'COMMIT.txt') -Value $env:GITHUB_SHA -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $package 'BUILD-CHANNEL.txt') -Value $env:GITHUB_REF -Encoding utf8NoBOM
 $verification = New-Item -ItemType Directory -Path (Join-Path $package 'verification') -Force
-foreach ($name in $reports.Keys) {
+foreach ($name in @($reports.Keys) + $regressionReports) {
     Copy-Item -LiteralPath "TestResults/$name" -Destination $verification.FullName
 }
 New-Item -ItemType Directory -Path 'dist' -Force | Out-Null

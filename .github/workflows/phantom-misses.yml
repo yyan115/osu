@@ -2,7 +2,7 @@ name: Phantom Misses Desktop
 
 on:
   push:
-    branches: [master, phantom-misses]
+    branches: [master, phantom-misses, fix/phantom-miss-fidelity]
   workflow_dispatch:
 
 permissions:
@@ -35,12 +35,25 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Archive exact source for fidelity review
+        if: matrix.rid == 'linux-x64' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
+        run: git archive --format=tar --output=fidelity-source.tar HEAD
+
+      - name: Upload fidelity review source
+        if: matrix.rid == 'linux-x64' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
+        uses: actions/upload-artifact@v7
+        with:
+          name: phantom-fidelity-source
+          path: fidelity-source.tar
+          retention-days: 7
+          if-no-files-found: error
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
       - name: Build desktop and tests
-        run: dotnet build osu.Desktop.slnf -c Debug -warnaserror
+        run: dotnet build osu.Desktop.slnf -c Debug -warnaserror -p:EnforceCodeStyleInBuild=true
 
       - name: Run Phantom Misses regression tests
         run: >-
@@ -59,6 +72,19 @@ jobs:
           --logger 'trx;LogFileName=mod-validity.trx'
           --results-directory TestResults
           -- NUnit.ConsoleOut=0
+
+      - name: Recheck broader CI regressions in both threading modes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $filters = 'FullyQualifiedName~TestScenePlayerSkinDependencies|FullyQualifiedName~osu.Game.Tests.NonVisual.CustomDataDirectoryTest|FullyQualifiedName~osu.Game.Tests.IPC.WebSocketTest|FullyQualifiedName~osu.Game.Tests.Database.BackgroundDataStoreProcessorTests|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.Judgements.TestSceneHitJudgements|FullyQualifiedName~TestSceneSoloResultsScreenLeaderboard|FullyQualifiedName~osu.Game.Tests.Scores.|FullyQualifiedName~osu.Game.Tests.Skins.|FullyQualifiedName~TestScenePlayerScoreSubmission|FullyQualifiedName~TestSceneSpectator|FullyQualifiedName~TestSceneHitErrorMeter|FullyQualifiedName~TestSceneColourHitErrorMeter|FullyQualifiedName~TestSceneBeatmapCarouselSetsSplitApart|FullyQualifiedName~TestSceneLoginOverlay|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneSampleOutput|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneLegacyReplayPlayback'
+          foreach ($mode in @('SingleThread', 'MultiThreaded')) {
+            $env:OSU_EXECUTION_MODE = $mode
+            dotnet test osu.Game.Tests/bin/Debug/net10.0/osu.Game.Tests.dll osu.Game.Rulesets.Taiko.Tests/bin/Debug/net10.0/osu.Game.Rulesets.Taiko.Tests.dll --filter $filters --logger "trx;LogFileName=ci-regressions-$mode.trx" --results-directory TestResults -- NUnit.ConsoleOut=0
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            [xml] $report = Get-Content "TestResults/ci-regressions-$mode.trx" -Raw
+            if ([int] $report.TestRun.ResultSummary.Counters.executed -eq 0) { throw "No regression tests executed for $mode" }
+          }
 
       - name: Upload test results
         if: always()

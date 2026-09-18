@@ -28,7 +28,7 @@ namespace osu.Game.Rulesets.Osu.Mods
     /// Training mod which occasionally displays a synthetic miss for a hit circle that was
     /// actually hit. The authoritative judgement and score are never modified.
     /// </summary>
-    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed, IReadFromConfig, IObscuresRealTimeGameplayState
+    public partial class OsuModPhantomMisses : Mod, IApplicableToDrawableRuleset<OsuHitObject>, IApplicableToDrawableHitObject, IApplicableToHUD, IApplicableToPlayer, IApplicableFailOverride, IHasSeed, IObscuresRealTimeGameplayState, IOverridesComboBreakAudio
     {
         public override string Name => "Phantom Misses";
 
@@ -87,8 +87,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         public BindableBool PreventFailure { get; } = new BindableBool(true);
 
         private readonly HashSet<HitCircle> phantomTargets = new HashSet<HitCircle>();
-        private readonly HashSet<JudgementResult> nativeComboBreakTriggers = new HashSet<JudgementResult>();
-        private readonly Bindable<bool> alwaysPlayFirstComboBreak = new Bindable<bool>();
+        private readonly Dictionary<HitCircle, CircleMissPresentation> circlePresentations = new Dictionary<HitCircle, CircleMissPresentation>();
 
         private JudgementContainer<DrawableOsuJudgement> judgementLayer = null!;
         private Container judgementAboveHitObjectLayer = null!;
@@ -96,9 +95,27 @@ namespace osu.Game.Rulesets.Osu.Mods
         private SkinnableSound comboBreakSample = null!;
         private IFrameStableClock gameplayClock = null!;
 
-        public void ReadFromConfig(OsuConfigManager config)
+        public void ApplyToDrawableHitObject(DrawableHitObject drawable)
         {
-            config.BindWith(OsuSetting.AlwaysPlayFirstComboBreak, alwaysPlayFirstComboBreak);
+            if (drawable is not DrawableHitCircle circle)
+                return;
+
+            circle.MissPresentationFor = getCirclePresentation;
+            circle.DisplayMiss -= displayCircleMiss;
+            circle.DisplayMiss += displayCircleMiss;
+        }
+
+        private CircleMissPresentation getCirclePresentation(HitCircle circle)
+        {
+            if (!circlePresentations.TryGetValue(circle, out var presentation))
+            {
+                circlePresentations.Add(circle, presentation = new CircleMissPresentation
+                {
+                    IsPhantomTarget = phantomTargets.Contains(circle),
+                });
+            }
+
+            return presentation;
         }
 
         public void ApplyToDrawableRuleset(DrawableRuleset<OsuHitObject> drawableRuleset)
@@ -137,7 +154,6 @@ namespace osu.Game.Rulesets.Osu.Mods
             drawableRuleset.Overlays.Add(comboBreakSample = new SkinnableSound(new SampleInfo("Gameplay/combobreak")));
 
             drawableRuleset.Playfield.NewResult += onNewResult;
-            drawableRuleset.Playfield.RevertResult += onRevertResult;
         }
 
         public void ApplyToHUD(HUDOverlay overlay)
@@ -169,7 +185,7 @@ namespace osu.Game.Rulesets.Osu.Mods
         private void selectPhantomTargets(DrawableRuleset<OsuHitObject> drawableRuleset)
         {
             phantomTargets.Clear();
-            nativeComboBreakTriggers.Clear();
+            circlePresentations.Clear();
 
             HitCircle[] circles = drawableRuleset.Beatmap.HitObjects.OfType<HitCircle>().ToArray();
             if (circles.Length == 0)
@@ -207,64 +223,34 @@ namespace osu.Game.Rulesets.Osu.Mods
 
         private void onNewResult(DrawableHitObject judgedObject, JudgementResult realResult)
         {
-            // ComboEffects reacts to every combo reset, including results which are not visually
-            // displayed. Track the exact set of results for which its native sound path triggers.
-            bool comboActuallyReset = realResult.ComboAtJudgement > 0 && realResult.ComboAfterJudgement == 0;
-            bool nativeComboBreakTriggered = comboActuallyReset
-                                              && (realResult.ComboAtJudgement > 20
-                                                  || (alwaysPlayFirstComboBreak.Value && nativeComboBreakTriggers.Count == 0));
-
-            if (nativeComboBreakTriggered)
-                nativeComboBreakTriggers.Add(realResult);
-
-            if (!judgedObject.DisplayResult || !realResult.HasResult)
+            // Circle miss feedback is emitted by the drawable only after its normal hit
+            // window expires. This also normalises premature genuine misses.
+            if (judgedObject is DrawableHitCircle circle && circle.UsesDeferredMiss)
                 return;
 
-            JudgementResult visualResult = realResult;
-            bool showPhantomMiss = realResult.IsHit
-                                   && realResult.HitObject is HitCircle hitCircle
-                                   && phantomTargets.Contains(hitCircle);
+            // Hidden slider ticks can still break combo. Keep their feedback while taking
+            // all native combo audio out of the authoritative scoring path.
+            if (realResult.Type == HitResult.Miss || (realResult.ComboAtJudgement > 0 && realResult.ComboAfterJudgement == 0))
+                playComboBreak();
 
-            if (showPhantomMiss)
-            {
-                // This result is used only by DrawableOsuJudgement. It is never submitted to
-                // ScoreProcessor, HealthProcessor or GameplayState.
-                var visualHitObject = new HitCircle
-                {
-                    StartTime = realResult.TimeAbsolute,
-                };
+            if (judgedObject.DisplayResult && realResult.HasResult)
+                displayJudgement(judgedObject, realResult);
+        }
 
-                visualResult = new JudgementResult(visualHitObject, realResult.Judgement)
-                {
-                    Type = HitResult.Miss,
-                };
+        private void displayCircleMiss(DrawableHitCircle circle, JudgementResult visualResult)
+        {
+            playComboBreak();
+            displayJudgement(circle, visualResult);
+        }
 
-                if (judgedObject is DrawableHitCircle drawableHitCircle)
-                {
-                    // Circle skins may add their own successful-hit flash/scale transforms to the
-                    // skinned circle content. Remove transforms beginning at the judgement time so
-                    // those hit-only animations cannot reveal a phantom, while keeping pre-hit
-                    // approach/fade transforms intact.
-                    drawableHitCircle.CirclePiece.Drawable.ClearTransformsAfter(realResult.TimeAbsolute, true);
-
-                    // A real circle miss uses a 100ms top-level fade.
-                    drawableHitCircle.FadeOut(100);
-                }
-            }
-
-            // Native ComboEffects only plays at >20 combo, or for the first combo break when
-            // configured to do so. Fill in the other real misses ourselves so every displayed
-            // Miss has the same audio cue as a phantom, without double-playing the native sound.
-            bool canPlayGameplaySample = !gameplayClock.IsRewinding
-                                         && !gameplayClock.IsCatchingUp.Value
-                                         && !gameplayClock.IsPaused.Value;
-
-            if (canPlayGameplaySample
-                && (showPhantomMiss || (realResult.Type == HitResult.Miss && !nativeComboBreakTriggered)))
-            {
+        private void playComboBreak()
+        {
+            if (!gameplayClock.IsRewinding && !gameplayClock.IsCatchingUp.Value && !gameplayClock.IsPaused.Value)
                 comboBreakSample.Play();
-            }
+        }
 
+        private void displayJudgement(DrawableHitObject judgedObject, JudgementResult visualResult)
+        {
             DrawableOsuJudgement? judgement = judgementPooler.Get(
                 visualResult.Type,
                 drawableJudgement => drawableJudgement.Apply(visualResult, judgedObject));
@@ -277,11 +263,6 @@ namespace osu.Game.Rulesets.Osu.Mods
             judgementAboveHitObjectLayer.ChangeChildDepth(
                 judgement.ProxiedAboveHitObjectsContent,
                 (float)-visualResult.TimeAbsolute);
-        }
-
-        private void onRevertResult(JudgementResult result)
-        {
-            nativeComboBreakTriggers.Remove(result);
         }
 
         private void onJudgementLoaded(DrawableOsuJudgement judgement)

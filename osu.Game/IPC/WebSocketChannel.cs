@@ -42,13 +42,13 @@ namespace osu.Game.IPC
             if (readWriteTask?.Status >= TaskStatus.Running)
                 throw new InvalidOperationException($@"Cannot {nameof(Start)} more than once.");
 
-            readWriteTask = Task.Run(readWriteLoop, cancellationToken);
+            // Capture before queuing: shutdown can dispose the source before the worker starts.
+            CancellationToken token = runningTokenSource.Token;
+            readWriteTask = Task.Run(() => readWriteLoop(token), cancellationToken);
         }
 
-        private async Task readWriteLoop()
+        private async Task readWriteLoop(CancellationToken token)
         {
-            var token = runningTokenSource.Token;
-
             while (!token.IsCancellationRequested)
             {
                 ValueWebSocketReceiveResult result;

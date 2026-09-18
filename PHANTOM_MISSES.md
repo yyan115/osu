@@ -42,21 +42,23 @@ For a visible demonstration, use Autoplay + PM, set Average spacing to 30 and Wa
 
 ## Behaviour and scope
 
-Only standalone hit circles are selected as phantom targets. Successfully hitting a selected target shows a skinned miss, suppresses its hitsound, applies a miss-like fade and supplies combo-break audio. Genuine misses remain genuine in the real results. Score, combo, accuracy and health processing are not replaced with phantom results.
+Only standalone hit circles are selected as phantom targets. In version 1.0.1, a successfully hit target retains its normal unhit appearance until the hit window expires, then uses native skinned miss presentation and combo-break audio. Its successful-hit sound and animation are suppressed. Premature genuine circle misses use the same delayed presentation. Genuine misses remain genuine in the real results. Score, combo, accuracy and health processing are not replaced with phantom results.
 
 Live score/accuracy/combo/health HUD, separate playfield skin HUD content and break/replay overlays are concealed. Failure is prevented. These protections are mandatory; the old internal masking bindables are retained only for source compatibility and no longer control behaviour. The mod is unranked and unavailable in multiplayer.
 
 Bubbles, Flashlight, No Scope, Bloom, Muted and Adaptive Speed are incompatible because they replace judgement presentation or react visibly to real gameplay state. Normal rate/difficulty settings remain available subject to osu!'s other compatibility rules.
 
-This does not make real mistakes unknowable. Obvious misaims, slider breaks and spinner misses can still be recognised. Phantom targeting does not cover sliders or spinners, and unusual skins may retain distinguishable hit/miss details. The results screen always uses the real judgements.
+This does not make real mistakes unknowable. Obvious misaims, slider breaks and spinner misses can still be recognised. Phantom targeting does not cover sliders or spinners. The unchanged warmup and minimum spacing also allow deductions about real misses. Frequency/selection changes are deferred. Automated skin coverage does not prove perceptual indistinguishability on every setup. The results screen always uses the real judgements.
 
 ## Verification and source
 
-The **Phantom Misses Desktop** workflow builds and tests on native Windows and Linux runners separately, with warnings treated as errors. It runs the focused Phantom test fixture and osu! mod-validity checks, then publishes and packages self-contained Release clients. Packaging verifies that all intended tests were discovered and passed. Each package includes `COMMIT.txt`, `PHANTOM_VERSION`, and the actual `.trx` reports under `verification/`.
+The **Phantom Misses Desktop** workflow builds and tests on native Windows and Linux runners separately, with warnings and code-style violations treated as errors. It runs the Phantom scoring, mixed-replay and skin fixtures, osu! mod-validity checks, and broader regressions in both threading modes before packaging self-contained Release clients. Packaging verifies that the intended Phantom fixtures were discovered and passed. Each package includes `COMMIT.txt`, `PHANTOM_VERSION`, and actual `.trx` reports under `verification/`.
 
-The focused tests inspect active judgement containers, excluding preloaded pool placeholders. They check visible phantoms during a perfect run, full real combo/accuracy, sample masking, genuine misses, mandatory concealment, no-fail behaviour, deterministic target selection, warmup boundaries and spacing. Automated tests do not establish compatibility with every graphics/audio driver or skin.
+The focused tests inspect active judgement containers, excluding preloaded pool placeholders. They check visible phantoms during a perfect run, full real combo/accuracy, sample masking, genuine misses, mandatory concealment, no-fail behaviour, deterministic target selection, warmup boundaries and spacing. Skin tests additionally exercise six configurations, animation/lighting settings, Hidden/Classic, drawable reuse, rewind and live skin reload. See [presentation and verification details](PHANTOM_FIDELITY.md).
 
-Pushes to `phantom-misses` and `master` build both platforms. A successful `master` run publishes `phantom-v<PHANTOM_VERSION>` only when that version has not already been released. Published releases are never overwritten. To publish an update, change `PHANTOM_VERSION` and `PHANTOM_RELEASE_NOTES.md` along with the code, then push to `master`. **Run workflow** on `master` can retry an unpublished version.
+The separate full CI retains all configured Windows/Linux test shards in both threading modes, Code Quality, Android/iOS builds and an aggregate test report. Automated tests do not establish compatibility with every graphics/audio driver or skin.
+
+Pushes to `phantom-misses`, `fix/phantom-miss-fidelity` and `master` build both platforms. A successful `master` desktop run publishes `phantom-v<PHANTOM_VERSION>` only when that version has not already been released. Published releases are never overwritten. To publish an update, change `PHANTOM_VERSION` and `PHANTOM_RELEASE_NOTES.md` along with the code, verify the full CI, then merge into `master`. **Run workflow** on `master` can retry an unpublished version.
 
 [Releases](https://github.com/yyan115/osu/releases) | [Builds](https://github.com/yyan115/osu/actions/workflows/phantom-misses.yml) | [Source on master](https://github.com/yyan115/osu/tree/master)
 

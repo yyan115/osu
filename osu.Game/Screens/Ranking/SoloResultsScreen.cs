@@ -35,8 +35,10 @@ namespace osu.Game.Screens.Ranking
 
         protected override void LoadComplete()
         {
-            base.LoadComplete();
+            // The base implementation starts FetchScores(). Bind cached state before that
+            // request can subscribe, so the initial binding cannot complete a fresh fetch.
             globalScores.BindTo(leaderboardManager.Scores);
+            base.LoadComplete();
         }
 
         protected override void Dispose(bool isDisposing)
@@ -63,13 +65,18 @@ namespace osu.Game.Screens.Ranking
 
             requestTaskSource = new TaskCompletionSource<LeaderboardScores>();
 
-            globalScores.BindValueChanged(_ =>
+            // Subscribe and begin the refresh together on the update thread. A queued
+            // earlier response must not satisfy this fetch before its refresh begins.
+            Schedule(() =>
             {
-                if (globalScores.Value != null && leaderboardManager.CurrentCriteria?.Equals(criteria) == true)
-                    requestTaskSource.TrySetResult(globalScores.Value);
-            });
+                globalScores.BindValueChanged(_ =>
+                {
+                    if (globalScores.Value != null && leaderboardManager.CurrentCriteria?.Equals(criteria) == true)
+                        requestTaskSource.TrySetResult(globalScores.Value);
+                });
 
-            Schedule(() => leaderboardManager.FetchWithCriteria(criteria, forceRefresh: true));
+                leaderboardManager.FetchWithCriteria(criteria, forceRefresh: true);
+            });
 
             var result = await requestTaskSource.Task.ConfigureAwait(false);
 

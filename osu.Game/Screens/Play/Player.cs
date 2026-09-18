@@ -363,10 +363,13 @@ namespace osu.Game.Screens.Play
             // add the overlay components as a separate step as they proxy some elements from the above underlay/gameplay components.
             // also give the overlays the ruleset skin provider to allow rulesets to potentially override HUD elements (used to disable combo counters etc.)
             // we may want to limit this in the future to disallow rulesets from outright replacing elements the user expects to be there.
-            failAnimationContainer.Add(createOverlayComponents());
+            var overlayComponents = createOverlayComponents();
 
+            // Register before adding the overlays: skin components can start loading on background
+            // threads immediately, and the dependency cache must not be mutated while they read it.
             // Used by ReplaySettingsOverlay for button positioning.
             dependencies.CacheAs(HUDOverlay);
+            failAnimationContainer.Add(overlayComponents);
 
             if (!DrawableRuleset.AllowGameplayOverlays)
             {
@@ -676,7 +679,6 @@ namespace osu.Game.Screens.Play
         /// </list>
         /// </remarks>
         /// <param name="skipTransition">Whether the exit should perform without a transition, because the screen had faded to black already.</param>
-        /// <returns>Whether this call resulted in a final exit.</returns>
         protected bool PerformExit(bool skipTransition = false)
         {
             // Matching osu!stable behaviour, if the results screen is pending and the user requests an exit,
@@ -956,6 +958,12 @@ namespace osu.Game.Screens.Play
 
         private bool onFail()
         {
+            // Health judgements can be rewound after the player has entered its terminal
+            // failed state. Acknowledge repeated notifications without starting another
+            // fail animation or concluding/submitting the same score twice.
+            if (GameplayState.HasFailed)
+                return true;
+
             // Failing after the quit sequence has started may cause weird side effects with the fail animation / effects.
             if (GameplayState.HasQuit)
                 return false;

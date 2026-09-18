@@ -45,8 +45,8 @@ namespace osu.Game.Screens.Play.HUD
         [Resolved]
         private SpectatorClient client { get; set; } = null!;
 
-        [Resolved]
-        private GameplayState gameplayState { get; set; } = null!;
+        [Resolved(canBeNull: true)]
+        private GameplayState? gameplayState { get; set; }
 
         [Resolved]
         private MultiplayerClient multiplayerClient { get; set; } = null!;
@@ -87,7 +87,10 @@ namespace osu.Game.Screens.Play.HUD
         {
             base.LoadComplete();
 
-            ((IBindable<LocalUserPlayingState>)userPlayingState).BindTo(gameplayState.PlayingState);
+            // Skin components can also load outside a player, such as in skin previews.
+            // Keep the default NotPlaying state when there is no gameplay to observe.
+            if (gameplayState != null)
+                ((IBindable<LocalUserPlayingState>)userPlayingState).BindTo(gameplayState.PlayingState);
 
             multiplayerPlayers.BindTo(multiplayerClient.CurrentMatchPlayingUserIds);
             multiplayerPlayers.BindCollectionChanged((_, _) => removePlayersFromMultiplayerRoom());
