@@ -77,7 +77,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $filters = 'FullyQualifiedName~osu.Game.Tests.Scores.|FullyQualifiedName~osu.Game.Tests.Skins.|FullyQualifiedName~TestScenePlayerScoreSubmission|FullyQualifiedName~TestSceneSpectator|FullyQualifiedName~TestSceneHitErrorMeter|FullyQualifiedName~TestSceneColourHitErrorMeter|FullyQualifiedName~TestSceneBeatmapCarouselSetsSplitApart|FullyQualifiedName~TestSceneLoginOverlay|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneSampleOutput|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneLegacyReplayPlayback'
+          $filters = 'FullyQualifiedName~TestSceneSoloResultsScreenLeaderboard|FullyQualifiedName~osu.Game.Tests.Scores.|FullyQualifiedName~osu.Game.Tests.Skins.|FullyQualifiedName~TestScenePlayerScoreSubmission|FullyQualifiedName~TestSceneSpectator|FullyQualifiedName~TestSceneHitErrorMeter|FullyQualifiedName~TestSceneColourHitErrorMeter|FullyQualifiedName~TestSceneBeatmapCarouselSetsSplitApart|FullyQualifiedName~TestSceneLoginOverlay|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneSampleOutput|FullyQualifiedName~osu.Game.Rulesets.Taiko.Tests.TestSceneLegacyReplayPlayback'
           foreach ($mode in @('SingleThread', 'MultiThreaded')) {
             $env:OSU_EXECUTION_MODE = $mode
             dotnet test osu.Game.Tests/bin/Debug/net10.0/osu.Game.Tests.dll osu.Game.Rulesets.Taiko.Tests/bin/Debug/net10.0/osu.Game.Rulesets.Taiko.Tests.dll --filter $filters --logger "trx;LogFileName=ci-regressions-$mode.trx" --results-directory TestResults -- NUnit.ConsoleOut=0

@@ -112,8 +112,8 @@ namespace osu.Game.Tests.Visual.Ranking
                 for (int i = 0; i < 30; ++i)
                 {
                     var score = TestResources.CreateTestScoreInfo(importedBeatmap);
-                    score.OnlineID = i;
                     score.TotalScore = 10_000 * (30 - i);
+                    score.OnlineID = i;
                     scoreManager.Import(score);
                 }
 
@@ -278,7 +278,9 @@ namespace osu.Game.Tests.Visual.Ranking
 
             AddStep("show results", () => LoadScreen(new SoloResultsScreen(scores[0])));
             AddUntilStep("wait for loaded", () => ((Drawable)Stack.CurrentScreen).IsLoaded);
-            AddAssert("local user best shown", () => this.ChildrenOfType<ScorePanel>().Any(p => p.Score.UserID == API.LocalUser.Value.Id));
+            // Screen loading completes before asynchronous score fetching and panel population.
+            // Wait for the expected panel, still failing if it never appears.
+            AddUntilStep("local user best shown", () => this.ChildrenOfType<ScorePanel>().Any(p => p.Score.UserID == API.LocalUser.Value.Id));
         }
 
         [Test]
