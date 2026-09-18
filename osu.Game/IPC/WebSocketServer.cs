@@ -71,7 +71,7 @@ namespace osu.Game.IPC
         private Task? handleRequestTask;
 
         private int channelCounter;
-        private readonly ConcurrentDictionary<int, WebSocketChannel> channels = new ConcurrentDictionary<int, WebSocketChannel>();
+        private readonly ConcurrentDictionary<int, (WebSocketChannel Channel, HttpListenerResponse Response)> channels = new ConcurrentDictionary<int, (WebSocketChannel, HttpListenerResponse)>();
 
         private readonly CancellationTokenSource runningTokenSource = new CancellationTokenSource();
         private bool isDisposed;
@@ -172,7 +172,7 @@ namespace osu.Game.IPC
 
                 int channelId = Interlocked.Increment(ref channelCounter);
                 var wsChannel = new WebSocketChannel(wsContext.WebSocket);
-                channels[channelId] = wsChannel;
+                channels[channelId] = (wsChannel, response);
                 wsChannel.MessageReceived += msg => MessageReceived?.Invoke(channelId, msg);
                 wsChannel.ClosedPrematurely += () => onChannelClosed(channelId);
                 wsChannel.Start(runningTokenSource.Token);
@@ -183,8 +183,14 @@ namespace osu.Game.IPC
 
         private void onChannelClosed(int channelId)
         {
-            if (channels.TryRemove(channelId, out var channel))
-                channel.Dispose();
+            if (channels.TryGetValue(channelId, out var channel))
+            {
+                // A WebSocket upgrade cannot return to HTTP keep-alive processing. Abort the
+                // response before disposing the socket or unregistering this channel.
+                channel.Response.Abort();
+                if (channels.TryRemove(channelId, out _))
+                    channel.Channel.Dispose();
+            }
             logger.Add($@"Connection with client #{channelId} closed.");
         }
 
@@ -198,7 +204,7 @@ namespace osu.Game.IPC
                 throw new ArgumentException($@"Client {clientId} is not known.");
 
             logger.Add($@"Sending to client {clientId}: {message}");
-            await channel.SendAsync(message).ConfigureAwait(false);
+            await channel.Channel.SendAsync(message).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -207,7 +213,7 @@ namespace osu.Game.IPC
         public Task BroadcastAsync(string message)
         {
             logger.Add($@"Broadcasting to all clients: {message}");
-            return Task.WhenAll(channels.Values.Select(ch => ch.SendAsync(message)).ToArray());
+            return Task.WhenAll(channels.Values.Select(ch => ch.Channel.SendAsync(message)).ToArray());
         }
 
         /// <summary>
@@ -237,16 +243,22 @@ namespace osu.Game.IPC
                 }
             }
 
+            var activeChannels = channels.Values.ToArray();
             // Stop and observe channel reads before the listener disposes their network streams.
             // Closing the transport first can leave the underlying socket read tasks unobserved.
             try
             {
-                await Task.WhenAll(channels.Values.Select(ch => ch.StopAsync(stoppingToken)).ToArray()).ConfigureAwait(false);
+                await Task.WhenAll(activeChannels.Select(ch => ch.Channel.StopAsync(stoppingToken)).ToArray()).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 // has to be caught manually because outer task isn't accepting `stoppingToken`.
             }
+
+            // HttpListener's forced connection cleanup can otherwise enter HTTP keep-alive
+            // processing recursively while disposing an upgraded response stream.
+            foreach (var channel in activeChannels)
+                channel.Response.Abort();
 
             try
             {
@@ -270,10 +282,13 @@ namespace osu.Game.IPC
             // no clue why this isn't accessible without casting.
             // sidebar: `Stop()` unregisters addresses on Windows, but `Abort()` doesn't!
             // this `Dispose()` implementation calls the former.
-            (listener as IDisposable)?.Dispose();
-
             foreach (var channel in channels.Values)
-                channel.Dispose();
+            {
+                channel.Response.Abort();
+                channel.Channel.Dispose();
+            }
+
+            (listener as IDisposable)?.Dispose();
 
             runningTokenSource.Dispose();
             contextResetEvent.Dispose();
