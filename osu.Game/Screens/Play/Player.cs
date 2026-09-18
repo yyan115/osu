@@ -363,10 +363,13 @@ namespace osu.Game.Screens.Play
             // add the overlay components as a separate step as they proxy some elements from the above underlay/gameplay components.
             // also give the overlays the ruleset skin provider to allow rulesets to potentially override HUD elements (used to disable combo counters etc.)
             // we may want to limit this in the future to disallow rulesets from outright replacing elements the user expects to be there.
-            failAnimationContainer.Add(createOverlayComponents());
+            var overlayComponents = createOverlayComponents();
 
+            // Register before adding the overlays: skin components can start loading on background
+            // threads immediately, and the dependency cache must not be mutated while they read it.
             // Used by ReplaySettingsOverlay for button positioning.
             dependencies.CacheAs(HUDOverlay);
+            failAnimationContainer.Add(overlayComponents);
 
             if (!DrawableRuleset.AllowGameplayOverlays)
             {
