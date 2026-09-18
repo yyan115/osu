@@ -1,0 +1,33 @@
+name: Socket regression local toolchain
+on:
+  push:
+    branches: [ci/socket-shutdown-repro]
+    paths: [.github/workflows/socket-local-toolchain.yml]
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Archive the installed SDK and matching runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+          sdk="$(dotnet --version)"
+          runtime="$(dotnet --list-runtimes | awk '$1 == "Microsoft.NETCore.App" && $2 ~ /^10\./ {print $2}' | sort -V | tail -1)"
+          ref="$(find "$root/packs/Microsoft.NETCore.App.Ref" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)"
+          hostref="$(find "$root/packs/Microsoft.NETCore.App.Host.linux-x64" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)"
+          tar -C "$root" -czf socket-dotnet-toolchain.tar.gz dotnet host/fxr sdk/$sdk shared/Microsoft.NETCore.App/$runtime packs/Microsoft.NETCore.App.Ref/$ref packs/Microsoft.NETCore.App.Host.linux-x64/$hostref
+          sha256sum socket-dotnet-toolchain.tar.gz > socket-dotnet-toolchain.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: socket-dotnet-toolchain
+          path: socket-dotnet-toolchain.*
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
