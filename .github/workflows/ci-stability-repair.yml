@@ -1,0 +1,81 @@
+name: Verify and apply CI stability repair
+on:
+  push:
+    branches: [fix/phantom-miss-fidelity]
+    paths: [.github/workflows/ci-stability-repair.yml, scripts/ci-stability-repair.patch]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: ci-stability-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: github.repository == 'yyan115/osu' && github.ref == 'refs/heads/fix/phantom-miss-fidelity'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OSU_EXECUTION_MODE: SingleThread
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: fix/phantom-miss-fidelity
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Verify base and install regression only
+        run: |
+          test "$(git rev-parse HEAD^)" = c2a35c1d3799f1463c960b3fd8f781acd89b8a44
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git apply --index --include=osu.Game.Tests/Visual/Gameplay/TestScenePlayerSkinDependencies.cs scripts/ci-stability-repair.patch
+          dotnet build osu.Desktop.slnf -c Debug -warnaserror -p:EnforceCodeStyleInBuild=true
+      - name: Prove regression detects the original ordering
+        run: |
+          set +e
+          dotnet test osu.Game.Tests/osu.Game.Tests.csproj -c Debug --no-build --filter FullyQualifiedName~TestScenePlayerSkinDependencies --logger 'trx;LogFileName=before.trx' --results-directory RepairResults -- NUnit.ConsoleOut=0
+          status=$?
+          set -e
+          test "$status" -ne 0
+          python - <<'PY'
+          import xml.etree.ElementTree as E
+          root = E.parse('RepairResults/before.trx').getroot()
+          ns = {'t': root.tag[1:].split('}')[0]}
+          failures = [r for r in root.findall('t:Results/t:UnitTestResult', ns) if r.get('outcome') == 'Failed']
+          assert len(failures) == 4, 'Expected all four rulesets to detect the old ordering'
+          for failure in failures:
+              text = ''.join(failure.itertext())
+              assert 'HUD dependencies registered before skin loading' in text, text
+          PY
+      - name: Apply fixes and verify regression
+        run: |
+          git apply --index --exclude=osu.Game.Tests/Visual/Gameplay/TestScenePlayerSkinDependencies.cs scripts/ci-stability-repair.patch
+          git diff --cached --check
+          dotnet build osu.Desktop.slnf -c Debug -warnaserror -p:EnforceCodeStyleInBuild=true
+          dotnet test osu.Game.Tests/osu.Game.Tests.csproj -c Debug --no-build --filter FullyQualifiedName~TestScenePlayerSkinDependencies --logger 'trx;LogFileName=after.trx' --results-directory RepairResults -- NUnit.ConsoleOut=0
+          python - <<'PY'
+          import xml.etree.ElementTree as E
+          root = E.parse('RepairResults/after.trx').getroot()
+          ns = {'t': root.tag[1:].split('}')[0]}
+          c = root.find('t:ResultSummary/t:Counters', ns)
+          assert c is not None and int(c.get('passed')) == 4 and int(c.get('failed')) == 0
+          PY
+      - name: Commit only to the development branch and start full verification
+        run: |
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git rm .github/workflows/ci-stability-repair.yml scripts/ci-stability-repair.patch
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: register HUD dependencies before async skin loads and observe import hosts'
+          git push origin "HEAD:refs/heads/$BRANCH"
+          git rev-parse HEAD | tee RepairResults/COMMIT.txt
+          gh api -X POST repos/yyan115/osu/actions/workflows/ci.yml/dispatches -f ref="$BRANCH"
+          gh api -X POST repos/yyan115/osu/actions/workflows/phantom-misses.yml/dispatches -f ref="$BRANCH"
+      - name: Preserve before and after evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-stability-red-green-${{ github.run_id }}
+          path: RepairResults/
+          if-no-files-found: warn
