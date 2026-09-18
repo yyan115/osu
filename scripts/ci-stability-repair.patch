@@ -171,7 +171,7 @@ index 0000000..8288e01
 +
 +                    if (player.Dependencies.Get<ScoreProcessor>() == null
 +                        || player.Dependencies.Get<HUDOverlay>() == null
-+                        || !ReferenceEquals(player.Dependencies.Get<HUDOverlay>(), player.HUDOverlay))
++                        || !ReferenceEquals(player.Dependencies.Get<HUDOverlay>(), ((TestPlayer)player).HUDOverlay))
 +                    {
 +                        Interlocked.Increment(ref missingDependencyCount);
 +                    }
